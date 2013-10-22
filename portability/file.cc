@@ -458,6 +458,7 @@ void toku_set_func_fsync(int (*fsync_function)(int)) {
 static void file_fsync_internal (int fd) {
     uint64_t tstart = toku_current_time_microsec();
     int r = -1;
+    uint64_t eintr_count = 0;
     while (r != 0) {
 	if (t_fsync) {
 	    r = t_fsync(fd);
@@ -466,6 +467,7 @@ static void file_fsync_internal (int fd) {
         }
 	if (r) {
             assert(get_error_errno() == EINTR);
+            eintr_count++;
 	}
     }
     toku_sync_fetch_and_add(&toku_fsync_count, 1);
@@ -474,6 +476,13 @@ static void file_fsync_internal (int fd) {
     if (duration >= toku_long_fsync_threshold) {
         toku_sync_fetch_and_add(&toku_long_fsync_count, 1);
         toku_sync_fetch_and_add(&toku_long_fsync_time, duration);
+
+        const int tstr_length = 26;
+        char tstr[tstr_length];
+        time_t t = time(0);
+        fprintf(stderr, "%.24s TokuDB %s fd=%d duration=%" PRIu64 " usec eintr=%" PRIu64 "\n", 
+                ctime_r(&t, tstr), __FUNCTION__, fd, duration, eintr_count);
+        fflush(stderr);
     }
 }
 
