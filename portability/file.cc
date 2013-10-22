@@ -449,6 +449,7 @@ static uint64_t toku_fsync_time;
 static uint64_t toku_long_fsync_threshold = 1000000;
 static uint64_t toku_long_fsync_count;
 static uint64_t toku_long_fsync_time;
+static uint64_t toku_long_fsync_eintr_count;
 
 void toku_set_func_fsync(int (*fsync_function)(int)) {
     t_fsync = fsync_function;
@@ -476,6 +477,7 @@ static void file_fsync_internal (int fd) {
     if (duration >= toku_long_fsync_threshold) {
         toku_sync_fetch_and_add(&toku_long_fsync_count, 1);
         toku_sync_fetch_and_add(&toku_long_fsync_time, duration);
+        toku_sync_fetch_and_add(&toku_long_fsync_eintr_count, eintr_count);
 
         const int tstr_length = 26;
         char tstr[tstr_length];
