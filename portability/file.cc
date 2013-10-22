@@ -450,6 +450,7 @@ static uint64_t toku_long_fsync_threshold = 1000000;
 static uint64_t toku_long_fsync_count;
 static uint64_t toku_long_fsync_time;
 static uint64_t toku_long_fsync_eintr_count;
+static int toku_fsync_debug = 1;
 
 void toku_set_func_fsync(int (*fsync_function)(int)) {
     t_fsync = fsync_function;
@@ -479,12 +480,14 @@ static void file_fsync_internal (int fd) {
         toku_sync_fetch_and_add(&toku_long_fsync_time, duration);
         toku_sync_fetch_and_add(&toku_long_fsync_eintr_count, eintr_count);
 
-        const int tstr_length = 26;
-        char tstr[tstr_length];
-        time_t t = time(0);
-        fprintf(stderr, "%.24s TokuDB %s fd=%d duration=%" PRIu64 " usec eintr=%" PRIu64 "\n", 
-                ctime_r(&t, tstr), __FUNCTION__, fd, duration, eintr_count);
-        fflush(stderr);
+        if (toku_fsync_debug) {
+            const int tstr_length = 26;
+            char tstr[tstr_length];
+            time_t t = time(0);
+            fprintf(stderr, "%.24s TokuDB %s fd=%d duration=%" PRIu64 " usec eintr=%" PRIu64 "\n", 
+                    ctime_r(&t, tstr), __FUNCTION__, fd, duration, eintr_count);
+            fflush(stderr);
+        }
     }
 }
 
