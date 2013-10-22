@@ -481,11 +481,17 @@ static void file_fsync_internal (int fd) {
         toku_sync_fetch_and_add(&toku_long_fsync_eintr_count, eintr_count);
 
         if (toku_fsync_debug) {
+            char fdname[256];
+            snprintf(fdname, sizeof fdname, "/proc/%d/fd/%d", getpid(), fd);
+            char lname[256];
+            ssize_t s = readlink(fdname, lname, sizeof lname);
+            if (0 < s && s < (ssize_t) sizeof lname)
+                lname[s] = 0;
             const int tstr_length = 26;
             char tstr[tstr_length];
             time_t t = time(0);
-            fprintf(stderr, "%.24s TokuDB %s fd=%d duration=%" PRIu64 " usec eintr=%" PRIu64 "\n", 
-                    ctime_r(&t, tstr), __FUNCTION__, fd, duration, eintr_count);
+            fprintf(stderr, "%.24s TokuDB %s fd=%d %s duration=%" PRIu64 " usec eintr=%" PRIu64 "\n", 
+                    ctime_r(&t, tstr), __FUNCTION__, fd, s > 0 ? lname : "?", duration, eintr_count);
             fflush(stderr);
         }
     }
