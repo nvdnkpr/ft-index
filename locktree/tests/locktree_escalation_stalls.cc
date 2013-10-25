@@ -93,6 +93,15 @@ PATENT RIGHTS GRANT:
 #include "locktree.h"
 #include "test.h"
 
+// This test verifies that small txn's do not get stalled for a long time by lock escalation.
+// Two lock trees are used by the test: a big lock tree and a small lock tree.
+// One big txn grabs lots of write locks on the big lock tree. 
+// Several small txn's grab a single write lock on the small lock tree.
+// None of the locks conflict.
+// Eventually, the locks for the big txn consume all of the lock tree memory, so lock escalation runs.
+// The test measures the lock acquisition time and makes sure that the small txn's are not blocked for 
+// the entire lock escalation time.
+
 using namespace toku;
 
 static int verbose = 0;
