@@ -403,6 +403,10 @@ int locktree::manager::iterate_pending_lock_requests(
     return r;
 }
 
+void locktree::manager::set_escalator_delay(uint64_t delay) {
+    m_escalator_delay = delay;
+}
+
 static void *escalator_thread(void *arg) {
     locktree::manager *mgr = reinterpret_cast<locktree::manager*>(arg);
     mgr->escalator_work();
@@ -415,6 +419,8 @@ void locktree::manager::escalator_init(void) {
     toku_cond_init(&m_escalator_work, nullptr);
     toku_cond_init(&m_escalator_done, nullptr);
     m_escalator_killed = false;
+    m_escalator_delay = 0;
+
     m_escalation_count = 0;
     m_escalation_time = 0;
     m_wait_escalation_count = 0;
@@ -477,16 +483,21 @@ void locktree::manager::add_escalator_wait_time(uint64_t t) {
 
 void locktree::manager::escalator_work(void) {
     toku_mutex_lock(&m_escalator_mutex);
-    while (!m_escalator_killed) {
+    while (1) {
+        if (m_escalator_killed)
+            break;
         toku_cond_wait(&m_escalator_work, &m_escalator_mutex);
-        if (!m_escalator_killed) {
-            toku_mutex_unlock(&m_escalator_mutex);
-            mutex_lock();
-            escalate_all_locktrees();
-            mutex_unlock();
-            toku_mutex_lock(&m_escalator_mutex);
-            toku_cond_broadcast(&m_escalator_done);
+        if (m_escalator_killed)
+            break;
+        toku_mutex_unlock(&m_escalator_mutex);
+        if (m_escalator_delay) {
+            usleep(m_escalator_delay);
         }
+        mutex_lock();
+        escalate_all_locktrees();
+        mutex_unlock();
+        toku_mutex_lock(&m_escalator_mutex);
+        toku_cond_broadcast(&m_escalator_done);
     }
     toku_mutex_unlock(&m_escalator_mutex);
 }
