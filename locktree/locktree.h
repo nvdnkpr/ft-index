@@ -311,6 +311,8 @@ public:
                                                      void *extra);
         int iterate_pending_lock_requests(lock_request_iterate_callback cb, void *extra);
 
+        void set_escalator_delay(uint64_t delay);
+
     private:
         static const uint64_t DEFAULT_MAX_LOCK_MEMORY = 64L * 1024 * 1024;
         static const uint64_t DEFAULT_LOCK_WAIT_TIME = 0;
@@ -387,6 +389,7 @@ public:
         toku_cond_t m_escalator_done;    // signal that escalation is done
         bool m_escalator_killed;
         toku_pthread_t m_escalator_id;
+        uint64_t m_escalator_delay;
 
         friend class manager_unit_test;
 
