@@ -326,7 +326,8 @@ void locktree::manager::run_escalation(void) {
 
     // run escalation on the background thread
     toku_mutex_lock(&m_escalator_mutex);
-    for (int i = 0; i < 10; i++) {
+    int i;
+    for (i = 0; i < 10; i++) {
         if (m_escalator_verbose)
             fprintf(stderr, "%s %d %" PRIu64 " %" PRIu64 "\n", __FUNCTION__, i, m_current_lock_memory, m_max_lock_memory);
         if (m_escalator_state == escalator_idle) {
@@ -348,6 +349,13 @@ void locktree::manager::run_escalation(void) {
             break;
     }
     toku_mutex_unlock(&m_escalator_mutex);
+    if (i != 0) {
+        const int tstr_length = 26;
+        char tstr[tstr_length];
+        time_t t = time(0);
+        ctime_r(&t, tstr);
+        fprintf(stderr, "%.24s toku::locktree::manager::%s %d\n", tstr, __FUNCTION__, i);
+    }
 
     // else run escalation on this thread
     // mutex_lock(); escalate_all_locktrees(); mutex_unlock();
