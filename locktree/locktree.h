@@ -311,6 +311,9 @@ public:
                                                      void *extra);
         int iterate_pending_lock_requests(lock_request_iterate_callback cb, void *extra);
 
+        void set_escalator_delay(uint64_t delay);
+        void set_escalator_verbose(bool verbose);
+
     private:
         static const uint64_t DEFAULT_MAX_LOCK_MEMORY = 64L * 1024 * 1024;
         static const uint64_t DEFAULT_LOCK_WAIT_TIME = 0;
@@ -319,6 +322,8 @@ public:
         uint64_t m_max_lock_memory;
         uint64_t m_current_lock_memory;
         memory_tracker m_mem_tracker;
+
+        bool out_of_locks(void) const;
 
         struct lt_counters m_lt_counters;
 
@@ -386,6 +391,9 @@ public:
         toku_cond_t m_escalator_done;    // signal that escalation is done
         bool m_escalator_killed;
         toku_pthread_t m_escalator_id;
+        uint64_t m_escalator_delay;
+        bool m_escalator_verbose;
+        enum { escalator_idle, escalator_starting, escalator_running } m_escalator_state;
 
         friend class manager_unit_test;
 
