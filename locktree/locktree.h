@@ -388,10 +388,7 @@ public:
         uint64_t m_long_wait_escalation_time;
 
         toku_mutex_t m_escalator_mutex;
-        toku_cond_t m_escalator_work;    // signal the escalator to run
         toku_cond_t m_escalator_done;    // signal that escalation is done
-        bool m_escalator_killed;
-        toku_pthread_t m_escalator_id;
         uint64_t m_escalator_delay;
         bool m_escalator_verbose;
         enum { escalator_idle, escalator_starting, escalator_running } m_escalator_state;
