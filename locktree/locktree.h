@@ -215,6 +215,9 @@ public:
     // since the lock_request object is opaque 
     struct lt_lock_request_info *get_lock_request_info(void);
 
+    void note_mem_used(uint64_t mem_used);
+    void note_mem_released(uint64_t mem_freed);
+
     // The locktree manager manages a set of locktrees,
     // one for each open dictionary. Locktrees are accessed through
     // the manager, and when they are no longer needed, they can
@@ -232,7 +235,7 @@ public:
 
         void destroy(void);
 
-        size_t get_max_lock_memory(void);
+        uint64_t get_max_lock_memory(void);
 
         int set_max_lock_memory(size_t max_lock_memory);
 
@@ -273,9 +276,11 @@ public:
             //          enough resources for a new lock.
             int check_current_lock_constraints(void);
 
-            void note_mem_used(uint64_t mem_used);
+            void note_mem_used2(uint64_t mem_used);
 
-            void note_mem_released(uint64_t mem_freed);
+            void note_mem_released2(uint64_t mem_freed);
+
+            uint64_t get_max_lock_memory(void) const;
 
         private:
             manager *m_mgr;
@@ -313,6 +318,9 @@ public:
 
         void set_escalator_delay(uint64_t delay);
         void set_escalator_verbose(bool verbose);
+
+        // effect: escalate's the locks in this locktree
+        void escalate_this_locktree(locktree *lt);
 
     private:
         static const uint64_t DEFAULT_MAX_LOCK_MEMORY = 64L * 1024 * 1024;
@@ -362,21 +370,21 @@ public:
         // requires: Manager's mutex is held
         void locktree_map_remove(locktree *lt);
 
-        // effect: Runs escalation on all locktrees.
-        void run_escalation(void);
-
         static int find_by_dict_id(locktree *const &lt, const DICTIONARY_ID &dict_id);
 
         void escalator_init(void);
 
         void escalator_destroy(void);
 
-        // effect: Add time t to the escalator's wait time statistics
-        void add_escalator_wait_time(uint64_t t);
+        // effect: Runs escalation on all locktrees.
+        void run_escalation(void);
 
         // effect: escalate's the locks in each locktree
         // requires: manager's mutex is held
         void escalate_all_locktrees(void);
+
+        // effect: Add time t to the escalator's wait time statistics
+        void add_escalator_wait_time(uint64_t t);
 
         // statistics about lock escalation.
         uint64_t m_escalation_count;
@@ -394,9 +402,6 @@ public:
         enum { escalator_idle, escalator_starting, escalator_running } m_escalator_state;
 
         friend class manager_unit_test;
-
-    public:
-        void escalator_work(void);
     };
     ENSURE_POD(manager);
 
@@ -404,6 +409,7 @@ public:
 
 private:
     manager::memory_tracker *m_mem_tracker;
+    manager *m_mgr;
 
     DICTIONARY_ID m_dict_id;
 
@@ -419,6 +425,7 @@ private:
     comparator *m_cmp;
 
     uint32_t m_reference_count;
+    uint64_t m_current_lock_memory;
 
     // the locktree stores locks in a concurrent, non-overlapping rangetree
     concurrent_tree *m_rangetree;
@@ -578,7 +585,7 @@ private:
     // effect: Creates a locktree that uses the given memory tracker
     //         to report memory usage and honor memory constraints.
     void create(manager::memory_tracker *mem_tracker, DICTIONARY_ID dict_id,
-            DESCRIPTOR desc, ft_compare_func cmp);
+            DESCRIPTOR desc, ft_compare_func cmp, manager *mgr);
 
     void destroy(void);
 
@@ -595,6 +602,9 @@ private:
             const DBT *left_key, const DBT *right_key, txnid_set *conflicts);
 
     void escalate(manager::lt_escalate_cb after_escalate_callback, void *extra);
+
+    int check_current_lock_constraints(void);
+    bool out_of_locks(void) const;
 
     friend class locktree_unit_test;
     friend class manager_unit_test;

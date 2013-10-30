@@ -207,7 +207,7 @@ locktree *locktree::manager::get_lt(DICTIONARY_ID dict_id, DESCRIPTOR desc,
     locktree *lt = locktree_map_find(dict_id);
     if (lt == nullptr) {
         XCALLOC(lt);
-        lt->create(&m_mem_tracker, dict_id, desc, cmp);
+        lt->create(&m_mem_tracker, dict_id, desc, cmp, this);
         invariant(lt->m_reference_count == 1);
 
         // new locktree created - call the on_create callback
@@ -337,7 +337,7 @@ void locktree::manager::run_escalation(void) {
                 usleep(m_escalator_delay);
             }
             mutex_lock(); 
-            escalate_all_locktrees(); 
+            escalate_all_locktrees();
             mutex_unlock();
             toku_mutex_lock(&m_escalator_mutex);
             m_escalator_state = escalator_idle;
@@ -392,17 +392,21 @@ int locktree::manager::memory_tracker::check_current_lock_constraints(void) {
 
 static int trace_lock_memory = 0;
 
-void locktree::manager::memory_tracker::note_mem_used(uint64_t mem_used) {
+void locktree::manager::memory_tracker::note_mem_used2(uint64_t mem_used) {
     if (trace_lock_memory)
         fprintf(stderr, "%s %" PRIu64 " %" PRIu64 " %" PRIu64 "\n", __FUNCTION__, m_mgr->m_current_lock_memory, m_mgr->m_max_lock_memory, mem_used);
     (void) toku_sync_fetch_and_add(&m_mgr->m_current_lock_memory, mem_used);
 }
 
-void locktree::manager::memory_tracker::note_mem_released(uint64_t mem_released) {
+void locktree::manager::memory_tracker::note_mem_released2(uint64_t mem_released) {
     if (trace_lock_memory)
         fprintf(stderr, "%s %" PRIu64 " %" PRIu64 " %" PRIu64 "\n", __FUNCTION__, m_mgr->m_current_lock_memory, m_mgr->m_max_lock_memory, mem_released);
     uint64_t old_mem_used = toku_sync_fetch_and_sub(&m_mgr->m_current_lock_memory, mem_released);
     invariant(old_mem_used >= mem_released);
+}
+
+size_t locktree::manager::memory_tracker::get_max_lock_memory(void) const {
+    return m_mgr->get_max_lock_memory();
 }
 
 bool locktree::manager::memory_tracker::out_of_locks(void) const {
@@ -474,6 +478,10 @@ void locktree::manager::escalator_destroy(void) {
     toku_cond_destroy(&m_escalator_done);
 }
 
+void locktree::manager::escalate_this_locktree(locktree *lt) {
+    lt->escalate(m_lt_escalate_callback, m_lt_escalate_callback_extra);
+}
+
 void locktree::manager::escalate_all_locktrees(void) {
     // there are too many row locks in the system and we need to tidy up.
     //
@@ -489,7 +497,10 @@ void locktree::manager::escalate_all_locktrees(void) {
         locktree *lt;
         int r = m_locktree_map.fetch(i, &lt);
         invariant_zero(r);
-        lt->escalate(m_lt_escalate_callback, m_lt_escalate_callback_extra);
+        escalate_this_locktree(lt);
+        if (9 * m_current_lock_memory < 10 * m_max_lock_memory) {
+            break;
+        }
     }
     tokutime_t t1 = toku_time_now();
     trace_lock_memory = 0;
