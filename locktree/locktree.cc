@@ -116,9 +116,7 @@ namespace toku {
 // but does nothing based on the value of the reference count - it is
 // up to the user of the locktree to destroy it when it sees fit.
 
-void locktree::create(manager::memory_tracker *mem_tracker, DICTIONARY_ID dict_id,
-        DESCRIPTOR desc, ft_compare_func cmp, manager *mgr) {
-    m_mem_tracker = mem_tracker;
+void locktree::create(manager *mgr, DICTIONARY_ID dict_id, DESCRIPTOR desc, ft_compare_func cmp) {
     m_mgr = mgr;
     m_dict_id = dict_id;
 
@@ -762,36 +760,35 @@ void locktree::set_descriptor(DESCRIPTOR desc) {
 
 void locktree::note_mem_used(uint64_t mem_used) {
     (void) toku_sync_fetch_and_add(&m_current_lock_memory, mem_used);
-    m_mem_tracker->note_mem_used2(mem_used);
+    m_mgr->get_mem_tracker()->note_mem_used2(mem_used);
 }
 
 void locktree::note_mem_released(uint64_t mem_released) {
     uint64_t old_mem_used = toku_sync_fetch_and_sub(&m_current_lock_memory, mem_released);
     invariant(old_mem_used >= mem_released);
-    m_mem_tracker->note_mem_released2(mem_released);
+    m_mgr->get_mem_tracker()->note_mem_released2(mem_released);
 }
 
 bool locktree::out_of_locks(void) const {
-    return 2 * m_current_lock_memory > m_mem_tracker->get_max_lock_memory();
+    return 2 * m_current_lock_memory > m_mgr->get_mem_tracker()->get_max_lock_memory();
 }
 
 int locktree::check_current_lock_constraints(void) {
     int r = 0;
+    // check local constraints
     if (out_of_locks()) {
-        // TODO serialize threads on escalation?
-        m_mgr->escalate_this_locktree(this);
+        locktree *locktrees[1];
+        locktrees[0] = this;
+        m_mgr->run_escalation(locktrees, 1);
         if (out_of_locks()) {
             r = TOKUDB_OUT_OF_LOCKS;
         }
     }
+    // check global constraints
     if (r == 0) {
-        r = m_mem_tracker->check_current_lock_constraints();
+        r = m_mgr->get_mem_tracker()->check_current_lock_constraints();
     }
     return r;
-}
-
-locktree::manager::memory_tracker *locktree::get_mem_tracker(void) const {
-    return m_mem_tracker;
 }
 
 int locktree::compare(const locktree *lt) {
@@ -807,5 +804,6 @@ int locktree::compare(const locktree *lt) {
 DICTIONARY_ID locktree::get_dict_id() const {
     return m_dict_id;
 }
+
 
 } /* namespace toku */
