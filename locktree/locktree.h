@@ -319,8 +319,16 @@ public:
         void set_escalator_delay(uint64_t delay);
         void set_escalator_verbose(bool verbose);
 
-        // effect: escalate's the locks in this locktree
-        void escalate_this_locktree(locktree *lt);
+        // effect: escalate's the locks in the locktree if lt != nullptr
+        // otherwise escalate the locks in all locktrees
+        // requires: manager's mutex is held
+        void escalate_locktrees(locktree *locktrees[], int num_locktrees);
+        void escalate_all_locktrees(void);
+
+        // effect: Runs escalation on all locktrees.
+        void run_escalation(locktree *lt[], int num_locktrees);
+
+        memory_tracker *get_mem_tracker(void);
 
     private:
         static const uint64_t DEFAULT_MAX_LOCK_MEMORY = 64L * 1024 * 1024;
@@ -376,13 +384,6 @@ public:
 
         void escalator_destroy(void);
 
-        // effect: Runs escalation on all locktrees.
-        void run_escalation(void);
-
-        // effect: escalate's the locks in each locktree
-        // requires: manager's mutex is held
-        void escalate_all_locktrees(void);
-
         // effect: Add time t to the escalator's wait time statistics
         void add_escalator_wait_time(uint64_t t);
 
@@ -405,10 +406,7 @@ public:
     };
     ENSURE_POD(manager);
 
-    manager::memory_tracker *get_mem_tracker(void) const;
-
 private:
-    manager::memory_tracker *m_mem_tracker;
     manager *m_mgr;
 
     DICTIONARY_ID m_dict_id;
@@ -584,8 +582,7 @@ private:
 
     // effect: Creates a locktree that uses the given memory tracker
     //         to report memory usage and honor memory constraints.
-    void create(manager::memory_tracker *mem_tracker, DICTIONARY_ID dict_id,
-            DESCRIPTOR desc, ft_compare_func cmp, manager *mgr);
+    void create(manager *mgr, DICTIONARY_ID dict_id, DESCRIPTOR desc, ft_compare_func cmp);
 
     void destroy(void);
 

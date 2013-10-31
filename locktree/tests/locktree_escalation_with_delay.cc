@@ -56,7 +56,6 @@ PATENT RIGHTS GRANT:
 
   "THIS IMPLEMENTATION" means the copyrightable works distributed by
   Tokutek as part of the Fractal Tree project.
-
   "PATENT CLAIMS" means the claims of patents that are owned or
   licensable by Tokutek, both currently or in the future; and that in
   the absence of this license would be infringed by THIS
@@ -212,6 +211,8 @@ int main(int argc, const char *argv[]) {
     mgr.create(nullptr, nullptr, e_callback, nullptr);
     mgr.set_max_lock_memory(max_lock_memory);
     mgr.set_escalator_delay(delay);
+    if (verbose)
+        mgr.set_escalator_verbose(true);
 
     // create lock trees
     DESCRIPTOR desc[n_big];
