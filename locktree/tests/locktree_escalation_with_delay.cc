@@ -121,6 +121,7 @@ static int locktree_write_lock(locktree *lt, TXNID txn_id, int64_t left_k, int64
 }
 
 static void run_big_txn(locktree::manager *mgr UU(), locktree *lt, TXNID txn_id) {
+    fprintf(stderr, "%u run_big_txn %p %" PRIu64 "\n", toku_os_gettid(), lt, txn_id);
     int64_t last_i = -1;
     for (int64_t i = 0; !killed; i++) {
         uint64_t t_start = toku_current_time_microsec();
@@ -211,8 +212,7 @@ int main(int argc, const char *argv[]) {
     mgr.create(nullptr, nullptr, e_callback, nullptr);
     mgr.set_max_lock_memory(max_lock_memory);
     mgr.set_escalator_delay(delay);
-    if (verbose)
-        mgr.set_escalator_verbose(true);
+    mgr.set_escalator_verbose(verbose != 0);
 
     // create lock trees
     DESCRIPTOR desc[n_big];
@@ -229,7 +229,7 @@ int main(int argc, const char *argv[]) {
     pthread_t big_ids[n_big];
     for (int i = 0; i < n_big; i++) {
         big_arg[i] = { &mgr, lt[i], (TXNID)(1000+i) };
-        r = toku_pthread_create(&big_ids[i], nullptr, big_f, &big_arg);
+        r = toku_pthread_create(&big_ids[i], nullptr, big_f, &big_arg[i]);
         assert(r == 0);
     }
 

@@ -161,8 +161,7 @@ int main(int argc, const char *argv[]) {
     locktree::manager mgr;
     mgr.create(nullptr, nullptr, e_callback, nullptr);
     mgr.set_max_lock_memory(max_lock_memory);
-    mgr.set_escalator_delay(0);
-    mgr.set_escalator_verbose(true);
+    mgr.set_escalator_verbose(verbose != 0);
 
     const TXNID txn_a = 10;
     const TXNID txn_b = 100;
