@@ -92,6 +92,7 @@ PATENT RIGHTS GRANT:
 #ifndef TOKU_LOCKTREE_H
 #define TOKU_LOCKTREE_H
 
+#include <functional>
 #include <db.h>
 #include <toku_time.h>
 #include <toku_pthread.h>
@@ -215,14 +216,30 @@ public:
     // since the lock_request object is opaque 
     struct lt_lock_request_info *get_lock_request_info(void);
 
+    // Adjust the memory used by this locktree
     void note_mem_used(uint64_t mem_used);
     void note_mem_released(uint64_t mem_freed);
+    uint64_t get_mem_used(void) const;
+
+    class manager;
+
+    // the escalator coordinates escalation on a set of locktrees for a bunch of threads
+    class escalator {
+    public:
+        void create(void);
+        void destroy(void);
+        void run(locktree **locktrees, int num_locktrees, locktree::manager *mgr, std::function<bool (void)> out_of_locks);
+    private:
+        toku_mutex_t m_escalator_mutex;
+        toku_cond_t m_escalator_done;
+        int m_escalator_state;
+    };
+    ENSURE_POD(escalator);
 
     // The locktree manager manages a set of locktrees,
     // one for each open dictionary. Locktrees are accessed through
     // the manager, and when they are no longer needed, they can
     // be released by the user.
-
     class manager {
     public:
         typedef int  (*lt_create_cb)(locktree *lt, void *extra);
@@ -257,51 +274,16 @@ public:
         //         to zero, the on_destroy callback is called before it gets destroyed.
         void release_lt(locktree *lt);
 
-        // The memory tracker is employed by the manager to take care of
-        // maintaining the current number of locks and lock memory and run
-        // escalation if necessary.
-        //
-        // To do this, the manager hands out a memory tracker reference to each
-        // locktree it creates, so that the locktrees can notify the memory
-        // tracker when locks are acquired and released.
+        // effect: Determines if too many locks or too much memory is being used,
+        //         Runs escalation on the manager if so.
+        // returns: 0 if there enough resources to create a new lock, or TOKUDB_OUT_OF_LOCKS 
+        //          if there are not enough resources and lock escalation failed to free up
+        //          enough resources for a new lock.
+        int check_current_lock_constraints(void);
 
-        class memory_tracker {
-        public:
-            void set_manager(manager *mgr);
-
-            // effect: Determines if too many locks or too much memory is being used,
-            //         Runs escalation on the manager if so.
-            // returns: 0 if there enough resources to create a new lock, or TOKUDB_OUT_OF_LOCKS 
-            //          if there are not enough resources and lock escalation failed to free up
-            //          enough resources for a new lock.
-            int check_current_lock_constraints(void);
-
-            void note_mem_used2(uint64_t mem_used);
-
-            void note_mem_released2(uint64_t mem_freed);
-
-            uint64_t get_max_lock_memory(void) const;
-
-        private:
-            manager *m_mgr;
-
-            // returns: true if the manager of this memory tracker currently
-            //          has more locks or lock memory than it is allowed.
-            // note: this is a lock-less read, and it is ok for the caller to
-            //       get false when they should have gotten true as long as
-            //       a subsequent call gives the correct answer.
-            //
-            //       in general, if the tracker says the manager is not out of
-            //       locks, you are clear to add O(1) locks to the system.
-            bool out_of_locks(void) const;
-        };
-        ENSURE_POD(memory_tracker);
-
-        // effect: calls the private function run_escalation(), only ok to
-        //         do for tests.
-        // rationale: to get better stress test coverage, we want a way to
-        //            deterministicly trigger lock escalation.
-        void run_escalation_for_test(void);
+        // Adjust the memory used by all locktrees managed by this manager
+        void note_mem_used(uint64_t mem_used);
+        void note_mem_released(uint64_t mem_freed);
 
         void get_status(LTM_STATUS status);
 
@@ -317,18 +299,18 @@ public:
         int iterate_pending_lock_requests(lock_request_iterate_callback cb, void *extra);
 
         void set_escalator_delay(uint64_t delay);
+        uint64_t get_escalator_delay(void);
+
         void set_escalator_verbose(bool verbose);
+        bool get_escalator_verbose(void);
 
         // effect: escalate's the locks in the locktree if lt != nullptr
         // otherwise escalate the locks in all locktrees
-        // requires: manager's mutex is held
-        void escalate_locktrees(locktree *locktrees[], int num_locktrees);
-        void escalate_all_locktrees(void);
+        // requires: manager's mutex is held?
+        void escalate_locktrees(locktree **locktrees, int num_locktrees);
 
-        // effect: Runs escalation on all locktrees.
-        void run_escalation(locktree *lt[], int num_locktrees);
-
-        memory_tracker *get_mem_tracker(void);
+        // effect: Add time t to the escalator's wait time statistics
+        void add_escalator_wait_time(uint64_t t);
 
     private:
         static const uint64_t DEFAULT_MAX_LOCK_MEMORY = 64L * 1024 * 1024;
@@ -337,7 +319,6 @@ public:
         // tracks the current number of locks and lock memory
         uint64_t m_max_lock_memory;
         uint64_t m_current_lock_memory;
-        memory_tracker m_mem_tracker;
 
         bool out_of_locks(void) const;
 
@@ -380,27 +361,21 @@ public:
 
         static int find_by_dict_id(locktree *const &lt, const DICTIONARY_ID &dict_id);
 
-        void escalator_init(void);
-
-        void escalator_destroy(void);
-
-        // effect: Add time t to the escalator's wait time statistics
-        void add_escalator_wait_time(uint64_t t);
-
         // statistics about lock escalation.
-        uint64_t m_escalation_count;
-        tokutime_t m_escalation_time;
-        uint64_t m_escalation_latest_result;
-        uint64_t m_wait_escalation_count;
-        uint64_t m_wait_escalation_time;
-        uint64_t m_long_wait_escalation_count;
-        uint64_t m_long_wait_escalation_time;
+        struct escalation_stats {
+            toku_mutex_t m_escalation_mutex;
+            uint64_t m_escalation_count;
+            tokutime_t m_escalation_time;
+            uint64_t m_escalation_latest_result;
+            uint64_t m_wait_escalation_count;
+            uint64_t m_wait_escalation_time;
+            uint64_t m_long_wait_escalation_count;
+            uint64_t m_long_wait_escalation_time;
+        } m_escalation_stats;
 
-        toku_mutex_t m_escalator_mutex;
-        toku_cond_t m_escalator_done;    // signal that escalation is done
+        escalator m_escalator;
         uint64_t m_escalator_delay;
         bool m_escalator_verbose;
-        enum { escalator_idle, escalator_starting, escalator_running } m_escalator_state;
 
         friend class manager_unit_test;
     };
@@ -601,13 +576,17 @@ private:
     void escalate(manager::lt_escalate_cb after_escalate_callback, void *extra);
 
     int check_current_lock_constraints(void);
+
     bool out_of_locks(void) const;
+
+    escalator m_escalator;
 
     friend class locktree_unit_test;
     friend class manager_unit_test;
     friend class lock_request_unit_test;
 };
 ENSURE_POD(locktree);
+
 
 } /* namespace toku */
 

@@ -136,6 +136,7 @@ void locktree::create(manager *mgr, DICTIONARY_ID dict_id, DESCRIPTOR desc, ft_c
     m_sto_end_early_time = 0;
 
     m_current_lock_memory = 0;
+    m_escalator.create();
 
     m_lock_request_info.pending_lock_requests.create();
     ZERO_STRUCT(m_lock_request_info.mutex);
@@ -156,6 +157,7 @@ void locktree::create(manager *mgr, DICTIONARY_ID dict_id, DESCRIPTOR desc, ft_c
 
 void locktree::destroy(void) {
     invariant(m_reference_count == 0);
+    m_escalator.destroy();
     m_rangetree->destroy();
     toku_free(m_cmp);
     toku_free(m_rangetree);
@@ -760,33 +762,40 @@ void locktree::set_descriptor(DESCRIPTOR desc) {
 
 void locktree::note_mem_used(uint64_t mem_used) {
     (void) toku_sync_fetch_and_add(&m_current_lock_memory, mem_used);
-    m_mgr->get_mem_tracker()->note_mem_used2(mem_used);
+    m_mgr->note_mem_used(mem_used);
+}
+
+uint64_t locktree::get_mem_used(void) const {
+    return m_current_lock_memory;
 }
 
 void locktree::note_mem_released(uint64_t mem_released) {
     uint64_t old_mem_used = toku_sync_fetch_and_sub(&m_current_lock_memory, mem_released);
     invariant(old_mem_used >= mem_released);
-    m_mgr->get_mem_tracker()->note_mem_released2(mem_released);
+    m_mgr->note_mem_released(mem_released);
 }
 
 bool locktree::out_of_locks(void) const {
-    return 2 * m_current_lock_memory > m_mgr->get_mem_tracker()->get_max_lock_memory();
+    return 2 * m_current_lock_memory > m_mgr->get_max_lock_memory();
 }
 
 int locktree::check_current_lock_constraints(void) {
     int r = 0;
+#if 0
     // check local constraints
     if (out_of_locks()) {
-        locktree *locktrees[1];
-        locktrees[0] = this;
-        m_mgr->run_escalation(locktrees, 1);
+        if (m_mgr->get_escalator_verbose())
+            fprintf(stderr, "%u escalating %p %" PRIu64 " %" PRIu64 "\n", toku_os_gettid(), this, m_current_lock_memory, m_mgr->get_max_lock_memory());
+        locktree *locktrees[1] = { this };
+        m_escalator.run(locktrees, 1, m_mgr, [this] () -> bool { return out_of_locks(); });
         if (out_of_locks()) {
             r = TOKUDB_OUT_OF_LOCKS;
         }
     }
+#endif
     // check global constraints
     if (r == 0) {
-        r = m_mgr->get_mem_tracker()->check_current_lock_constraints();
+        r = m_mgr->check_current_lock_constraints();
     }
     return r;
 }
