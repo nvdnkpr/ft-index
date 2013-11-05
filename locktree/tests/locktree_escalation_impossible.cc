@@ -118,7 +118,7 @@ static int locktree_write_lock(locktree *lt, TXNID txn_id, int64_t left_k, int64
     return lt->acquire_write_lock(txn_id, &left, &right, nullptr);
 }
 
-static void e_callback(TXNID txnid, const locktree *lt, const range_buffer &buffer, void *extra) {
+static void e_callback(TXNID txnid, locktree *lt, const range_buffer &buffer, void *extra) {
     if (verbose)
         printf("%u %s %" PRIu64 " %p %d %p\n", toku_os_gettid(), __FUNCTION__, txnid, lt, buffer.get_num_ranges(), extra);
 }

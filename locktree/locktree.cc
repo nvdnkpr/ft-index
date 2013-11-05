@@ -137,6 +137,7 @@ void locktree::create(manager *mgr, DICTIONARY_ID dict_id, DESCRIPTOR desc, ft_c
 
     m_current_lock_memory = 0;
     m_escalator.create();
+    m_check_lock_tree_constraints = true;
 
     m_lock_request_info.pending_lock_requests.create();
     ZERO_STRUCT(m_lock_request_info.mutex);
@@ -781,9 +782,8 @@ bool locktree::out_of_locks(void) const {
 
 int locktree::check_current_lock_constraints(void) {
     int r = 0;
-#if 0
     // check local constraints
-    if (out_of_locks()) {
+    if (m_check_lock_tree_constraints && out_of_locks()) {
         if (m_mgr->get_escalator_verbose())
             fprintf(stderr, "%u escalating %p %" PRIu64 " %" PRIu64 "\n", toku_os_gettid(), this, m_current_lock_memory, m_mgr->get_max_lock_memory());
         locktree *locktrees[1] = { this };
@@ -792,12 +792,15 @@ int locktree::check_current_lock_constraints(void) {
             r = TOKUDB_OUT_OF_LOCKS;
         }
     }
-#endif
     // check global constraints
     if (r == 0) {
         r = m_mgr->check_current_lock_constraints();
     }
     return r;
+}
+
+void locktree::set_check_lock_tree_constraints(bool v) {
+    m_check_lock_tree_constraints = v;
 }
 
 int locktree::compare(const locktree *lt) {

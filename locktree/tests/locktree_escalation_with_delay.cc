@@ -152,7 +152,7 @@ static void *big_f(void *_arg) {
     return arg;
 }
 
-static void e_callback(TXNID txnid, const locktree *lt, const range_buffer &buffer, void *extra) {
+static void e_callback(TXNID txnid, locktree *lt, const range_buffer &buffer, void *extra) {
     if (verbose)
         printf("%u %s %" PRIu64 " %p %d %p\n", toku_os_gettid(), __FUNCTION__, txnid, lt, buffer.get_num_ranges(), extra);
 }
@@ -181,6 +181,7 @@ int main(int argc, const char *argv[]) {
     uint64_t stalls = 0;
     uint64_t max_lock_memory = 100000000;
     uint64_t delay = 500000;
+    bool check_lock_tree_constraints = true;
     
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
@@ -203,6 +204,10 @@ int main(int argc, const char *argv[]) {
             delay = atoll(argv[++i]);
             continue;
         }
+        if (strcmp(argv[i], "--check_lock_tree_constraints") == 0 && i+1 < argc) {
+            check_lock_tree_constraints = atoi(argv[++i]) != 0;
+            continue;
+        }
     }
 
     int r;
@@ -222,6 +227,8 @@ int main(int argc, const char *argv[]) {
         desc[i] = nullptr;
         dict_id[i] = { (uint64_t)i };
         lt[i] = mgr.get_lt(dict_id[i], desc[i], compare_dbts, nullptr);
+        assert(lt[i]);
+        lt[i]->set_check_lock_tree_constraints(check_lock_tree_constraints);
     }
 
     // create the worker threads

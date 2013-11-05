@@ -321,6 +321,11 @@ void locktree::manager::release_lt(locktree *lt) {
     }
 }
 
+// test-only version of lock escalation
+void locktree::manager::run_escalation_for_test(void) {
+    run_escalation();
+}
+
 static int cmp_locktree_sizes(const void *a, const void *b) {
     const locktree *a_lt = reinterpret_cast<const locktree *>(a);
     uint64_t a_size = a_lt->get_mem_used();
@@ -334,31 +339,35 @@ static int cmp_locktree_sizes(const void *a, const void *b) {
         return 0;
 }
 
+void locktree::manager::run_escalation(void) {
+    mutex_lock();
+    // get all locktrees
+    int num_locktrees = m_locktree_map.size();
+    locktree **locktrees = new locktree *[num_locktrees];
+    for (int i = 0; i < num_locktrees; i++) {
+        int r = m_locktree_map.fetch(i, &locktrees[i]);
+        invariant_zero(r);
+    }
+
+    // sort locktrees from largest to smallest
+    qsort(locktrees, num_locktrees, sizeof (locktree *), cmp_locktree_sizes);
+        
+    // run escalation
+    m_escalator.run(locktrees, num_locktrees, this, [this] () -> bool { return out_of_locks(); });
+    mutex_unlock();
+    delete [] locktrees;
+}
+
 int locktree::manager::check_current_lock_constraints(void) {
     int r = 0;
     // check if we're out of locks without the mutex first. then, grab the
     // mutex and check again. if we're still out of locks, run escalation.
     // return an error if we're still out of locks after escalation.
     if (out_of_locks()) {
-        // get all locktrees
-        mutex_lock();
-        int num_locktrees = m_locktree_map.size();
-        locktree **locktrees = new locktree *[num_locktrees];
-        for (int i = 0; i < num_locktrees; i++) {
-            r = m_locktree_map.fetch(i, &locktrees[i]);
-            invariant_zero(r);
-        }
-
-        // sort locktrees from largest to smallest
-        qsort(locktrees, num_locktrees, sizeof (locktree *), cmp_locktree_sizes);
-        
-        // run escalation
-        m_escalator.run(locktrees, num_locktrees, this, [this] () -> bool { return out_of_locks(); });
-        mutex_unlock();
+        run_escalation();
         if (out_of_locks()) {
             r = TOKUDB_OUT_OF_LOCKS;
         }
-        delete [] locktrees;
     }
     return r;
 }
@@ -372,8 +381,12 @@ void locktree::manager::note_mem_released(uint64_t mem_released) {
     invariant(old_mem_used >= mem_released);
 }
 
+uint64_t locktree::manager::get_mem_used(void) {
+    return m_current_lock_memory;
+}
+
 bool locktree::manager::out_of_locks(void) const {
-    return m_current_lock_memory >= m_max_lock_memory;
+    return m_current_lock_memory > m_max_lock_memory;
 }
 
 int locktree::manager::iterate_pending_lock_requests(

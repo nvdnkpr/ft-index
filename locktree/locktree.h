@@ -236,6 +236,8 @@ public:
     };
     ENSURE_POD(escalator);
 
+    void set_check_lock_tree_constraints(bool v);
+
     // The locktree manager manages a set of locktrees,
     // one for each open dictionary. Locktrees are accessed through
     // the manager, and when they are no longer needed, they can
@@ -244,7 +246,7 @@ public:
     public:
         typedef int  (*lt_create_cb)(locktree *lt, void *extra);
         typedef void (*lt_destroy_cb)(locktree *lt);
-        typedef void (*lt_escalate_cb)(TXNID txnid, const locktree *lt, const range_buffer &buffer, void *extra);
+        typedef void (*lt_escalate_cb)(TXNID txnid, locktree *lt, const range_buffer &buffer, void *extra);
 
         // note: create_cb is called just after a locktree is first created.
         //       destroy_cb is called just before a locktree is destroyed.
@@ -284,6 +286,7 @@ public:
         // Adjust the memory used by all locktrees managed by this manager
         void note_mem_used(uint64_t mem_used);
         void note_mem_released(uint64_t mem_freed);
+        uint64_t get_mem_used(void);
 
         void get_status(LTM_STATUS status);
 
@@ -297,6 +300,12 @@ public:
                                                      uint64_t start_time,
                                                      void *extra);
         int iterate_pending_lock_requests(lock_request_iterate_callback cb, void *extra);
+
+        // effect: calls the private function run_escalation(), only ok to
+        //         do for tests.
+        // rationale: to get better stress test coverage, we want a way to
+        //            deterministicly trigger lock escalation.
+        void run_escalation_for_test(void);
 
         void set_escalator_delay(uint64_t delay);
         uint64_t get_escalator_delay(void);
@@ -360,6 +369,8 @@ public:
         void locktree_map_remove(locktree *lt);
 
         static int find_by_dict_id(locktree *const &lt, const DICTIONARY_ID &dict_id);
+
+        void run_escalation(void);
 
         // statistics about lock escalation.
         struct escalation_stats {
@@ -580,6 +591,8 @@ private:
     bool out_of_locks(void) const;
 
     escalator m_escalator;
+
+    bool m_check_lock_tree_constraints;
 
     friend class locktree_unit_test;
     friend class manager_unit_test;
