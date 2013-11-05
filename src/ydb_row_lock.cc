@@ -119,7 +119,7 @@ int find_key_ranges_by_lt(const txn_lt_key_ranges &ranges,
 }
 
 static void db_txn_note_row_lock(DB *db, DB_TXN *txn, const DBT *left_key, const DBT *right_key) {
-    const toku::locktree *lt = db->i->lt;
+    toku::locktree *lt = db->i->lt;
 
     toku_mutex_lock(&db_txn_struct_i(txn)->txn_mutex);
 
@@ -148,12 +148,12 @@ static void db_txn_note_row_lock(DB *db, DB_TXN *txn, const DBT *left_key, const
     ranges.buffer->append(left_key, right_key);
     size_t new_num_bytes = ranges.buffer->get_num_bytes();
     invariant(new_num_bytes > old_num_bytes);
-    lt->get_mem_tracker()->note_mem_used(new_num_bytes - old_num_bytes);
+    lt->note_mem_used(new_num_bytes - old_num_bytes);
 
     toku_mutex_unlock(&db_txn_struct_i(txn)->txn_mutex);
 }
 
-void toku_db_txn_escalate_callback(TXNID txnid, const toku::locktree *lt, const toku::range_buffer &buffer, void *extra) {
+void toku_db_txn_escalate_callback(TXNID txnid, toku::locktree *lt, const toku::range_buffer &buffer, void *extra) {
     DB_ENV *CAST_FROM_VOIDP(env, extra);
 
     // Get the TOKUTXN and DB_TXN for this txnid from the environment's txn manager.
@@ -201,7 +201,7 @@ void toku_db_txn_escalate_callback(TXNID txnid, const toku::locktree *lt, const 
             //
             // We could theoretically steal the memory from the caller instead of copying
             // it, but it's simpler to have a callback API that doesn't transfer memory ownership.
-            lt->get_mem_tracker()->note_mem_released(ranges.buffer->get_num_bytes());
+            lt->note_mem_released(ranges.buffer->get_num_bytes());
             ranges.buffer->destroy();
             ranges.buffer->create();
             toku::range_buffer::iterator iter;
@@ -211,7 +211,7 @@ void toku_db_txn_escalate_callback(TXNID txnid, const toku::locktree *lt, const 
                 ranges.buffer->append(rec.get_left_key(), rec.get_right_key());
                 iter.next();
             }
-            lt->get_mem_tracker()->note_mem_used(ranges.buffer->get_num_bytes());
+            lt->note_mem_used(ranges.buffer->get_num_bytes());
         } else {
             // In rare cases, we may not find the associated locktree, because we are
             // racing with the transaction trying to add this locktree to the lt map
@@ -310,7 +310,7 @@ void toku_db_release_lt_key_ranges(DB_TXN *txn, txn_lt_key_ranges *ranges) {
     // release all of the locks this txn has ever successfully
     // acquired and stored in the range buffer for this locktree
     lt->release_locks(txnid, ranges->buffer);
-    lt->get_mem_tracker()->note_mem_released(ranges->buffer->get_num_bytes());
+    lt->note_mem_released(ranges->buffer->get_num_bytes());
     ranges->buffer->destroy();
     toku_free(ranges->buffer);
 

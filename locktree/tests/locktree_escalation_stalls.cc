@@ -176,7 +176,7 @@ static void *small_f(void *_arg) {
     return arg;
 }
 
-static void e_callback(TXNID txnid, const locktree *lt, const range_buffer &buffer, void *extra) {
+static void e_callback(TXNID txnid, locktree *lt, const range_buffer &buffer, void *extra) {
     if (verbose)
         printf("%u %s %" PRIu64 " %p %d %p\n", toku_os_gettid(), __FUNCTION__, txnid, lt, buffer.get_num_ranges(), extra);
 }
