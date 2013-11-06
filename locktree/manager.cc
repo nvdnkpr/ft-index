@@ -341,21 +341,23 @@ static int cmp_locktree_sizes(const void *a, const void *b) {
 
 void locktree::manager::run_escalation(void) {
     mutex_lock();
-    // get all locktrees
-    int num_locktrees = m_locktree_map.size();
-    locktree **locktrees = new locktree *[num_locktrees];
-    for (int i = 0; i < num_locktrees; i++) {
-        int r = m_locktree_map.fetch(i, &locktrees[i]);
-        invariant_zero(r);
-    }
+    if (out_of_locks()) {
+        // get all locktrees
+        int num_locktrees = m_locktree_map.size();
+        locktree **locktrees = new locktree *[num_locktrees];
+        for (int i = 0; i < num_locktrees; i++) {
+            int r = m_locktree_map.fetch(i, &locktrees[i]);
+            invariant_zero(r);
+        }
 
-    // sort locktrees from largest to smallest
-    qsort(locktrees, num_locktrees, sizeof (locktree *), cmp_locktree_sizes);
+        // sort locktrees from largest to smallest
+        qsort(locktrees, num_locktrees, sizeof (locktree *), cmp_locktree_sizes);
         
-    // run escalation
-    m_escalator.run(locktrees, num_locktrees, this, [this] () -> bool { return out_of_locks(); });
+        // run escalation
+        m_escalator.run(locktrees, num_locktrees, this, [this] () -> bool { return out_of_locks(); });
+        delete [] locktrees;
+    }
     mutex_unlock();
-    delete [] locktrees;
 }
 
 int locktree::manager::check_current_lock_constraints(void) {

@@ -101,6 +101,7 @@ PATENT RIGHTS GRANT:
 // Eventually, the locks for the big txn consume all of the lock tree memory, so lock escalation runs.
 // The test measures the lock acquisition time and makes sure that the small txn's are not blocked for 
 // the entire lock escalation time.
+// ./locktree_escalation_stalls --stalls 100 --max_lock_memory 1000000000
 
 using namespace toku;
 
@@ -201,8 +202,10 @@ static uint64_t get_escalation_count(locktree::manager &mgr) {
 }
 
 int main(int argc, const char *argv[]) {
-    uint64_t stalls = 0;
+    uint64_t stalls = 1;
     int n_small = 7;
+    bool check_lock_tree_constraints = true;
+    uint64_t max_lock_memory = 1000000;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
@@ -217,6 +220,14 @@ int main(int argc, const char *argv[]) {
             n_small = atoi(argv[++i]);
             continue;
         }
+        if (strcmp(argv[i], "--max_lock_memory") == 0 && i+1 < argc) {
+            max_lock_memory = atoll(argv[++i]);
+            continue;
+        }
+        if (strcmp(argv[i], "--check_lock_tree_constraints") == 0 && i+1 < argc) {
+            check_lock_tree_constraints = atoi(argv[++i]) != 0;
+            continue;
+        }
     }
 
     int r;
@@ -224,17 +235,21 @@ int main(int argc, const char *argv[]) {
     // create a manager
     locktree::manager mgr;
     mgr.create(nullptr, nullptr, e_callback, nullptr);
-    mgr.set_max_lock_memory(1000000000);
+    mgr.set_max_lock_memory(max_lock_memory);
     mgr.set_escalator_verbose(verbose != 0);
 
     // create lock trees
     DESCRIPTOR desc_0 = nullptr;
     DICTIONARY_ID dict_id_0 = { 1 };
     locktree *lt_0 = mgr.get_lt(dict_id_0, desc_0, compare_dbts, nullptr);
+    lt_0->set_check_lock_tree_constraints(check_lock_tree_constraints);
+
 
     DESCRIPTOR desc_1 = nullptr;
     DICTIONARY_ID dict_id_1 = { 2 };
     locktree *lt_1 = mgr.get_lt(dict_id_1, desc_1, compare_dbts, nullptr);
+    lt_1->set_check_lock_tree_constraints(check_lock_tree_constraints);
+
 
     // create the worker threads
     struct arg big_arg = { &mgr, lt_0, 1000 };
