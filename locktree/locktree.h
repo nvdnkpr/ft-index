@@ -92,7 +92,9 @@ PATENT RIGHTS GRANT:
 #ifndef TOKU_LOCKTREE_H
 #define TOKU_LOCKTREE_H
 
+#if TOKU_LOCKTREE_ESCALATOR_LAMBDA
 #include <functional>
+#endif
 #include <db.h>
 #include <toku_time.h>
 #include <toku_pthread.h>
@@ -223,12 +225,18 @@ public:
 
     class manager;
 
+    manager *get_manager(void);
+
     // the escalator coordinates escalation on a set of locktrees for a bunch of threads
     class escalator {
     public:
         void create(void);
         void destroy(void);
+#if TOKU_LOCKTREE_ESCALATOR_LAMBDA
         void run(manager *mgr, std::function<void (void)> escalate_locktrees_fun);
+#else
+        void run(manager *mgr, void (*escalate_locktrees_fun)(void *extra), void *extra);
+#endif
     private:
         toku_mutex_t m_escalator_mutex;
         toku_cond_t m_escalator_done;
@@ -307,8 +315,7 @@ public:
         //            deterministicly trigger lock escalation.
         void run_escalation_for_test(void);
 
-        void set_escalator_delay(uint64_t delay);
-        uint64_t get_escalator_delay(void);
+        void run_escalation(void);
 
         void set_escalator_verbose(bool verbose);
         bool get_escalator_verbose(void);
@@ -370,8 +377,6 @@ public:
 
         static int find_by_dict_id(locktree *const &lt, const DICTIONARY_ID &dict_id);
 
-        void run_escalation(void);
-
         // statistics about lock escalation.
         struct escalation_stats {
             toku_mutex_t m_escalation_mutex;
@@ -385,7 +390,6 @@ public:
         } m_escalation_stats;
 
         escalator m_escalator;
-        uint64_t m_escalator_delay;
         bool m_escalator_verbose;
 
         friend class manager_unit_test;

@@ -92,11 +92,9 @@ PATENT RIGHTS GRANT:
 #include "locktree.h"
 #include "test.h"
 
-// This test verifies that a lock request does not get a premature out of locks error.
-// Two big transactions are grabbing locks in their own lock trees.
-// Eventually, lock escalation needs to be run.
-// We delay the execution of the escalation.
-// The test ensures that the txn's do not get a premature out of locks error due to the delay.
+// One client locks 1,2,3...
+// The other client locks -1,-2,-3...
+// Eventually lock escalation runs.
 
 using namespace toku;
 
@@ -120,13 +118,16 @@ static int locktree_write_lock(locktree *lt, TXNID txn_id, int64_t left_k, int64
     return lt->acquire_write_lock(txn_id, &left, &right, nullptr);
 }
 
-static void run_big_txn(locktree::manager *mgr UU(), locktree *lt, TXNID txn_id) {
-    fprintf(stderr, "%u run_big_txn %p %" PRIu64 "\n", toku_os_gettid(), lt, txn_id);
+static void run_big_txn(locktree::manager *mgr UU(), locktree *lt, TXNID txn_id, int64_t start_i) {
+    fprintf(stderr, "%u run_big_txn %p %" PRIu64 " %" PRId64 "\n", toku_os_gettid(), lt, txn_id, start_i);
     int64_t last_i = -1;
-    for (int64_t i = 0; !killed; i++) {
+    for (int64_t i = start_i; !killed; i++) {
+        if (verbose)
+            printf("%u %" PRId64 "\n", toku_os_gettid(), i);
         uint64_t t_start = toku_current_time_microsec();
         int r = locktree_write_lock(lt, txn_id, i, i);
-        assert(r == 0);
+        if (r != 0)
+            break;
         last_i = i;
         uint64_t t_end = toku_current_time_microsec();
         uint64_t t_duration = t_end - t_start;
@@ -136,19 +137,19 @@ static void run_big_txn(locktree::manager *mgr UU(), locktree *lt, TXNID txn_id)
         toku_pthread_yield();
     }
     if (last_i != -1)
-        locktree_release_lock(lt, txn_id, 0, last_i); // release the range 0 .. last_i
+        locktree_release_lock(lt, txn_id, start_i, last_i); // release the range 0 .. last_i
 }
 
 struct arg {
     locktree::manager *mgr;
     locktree *lt;
     TXNID txn_id;
-    int64_t k;
+    int64_t start_i;
 };
 
 static void *big_f(void *_arg) {
     struct arg *arg = (struct arg *) _arg;
-    run_big_txn(arg->mgr, arg->lt, arg->txn_id);
+    run_big_txn(arg->mgr, arg->lt, arg->txn_id, arg->start_i);
     return arg;
 }
 
@@ -178,18 +179,13 @@ static uint64_t get_escalation_count(locktree::manager &mgr) {
 
 int main(int argc, const char *argv[]) {
     int n_big = 2;
-    uint64_t stalls = 0;
-    uint64_t max_lock_memory = 100000000;
-    uint64_t delay = 500000;
-    bool check_lock_tree_constraints = true;
+    uint64_t stalls = 1;
+    uint64_t max_lock_memory = 1000000;
+    bool check_lock_tree_constraints = false;
     
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
             verbose++;
-            continue;
-        }
-        if (strcmp(argv[i], "--n_big") == 0 && i+1 < argc) {
-            n_big = atoi(argv[++i]);
             continue;
         }
         if (strcmp(argv[i], "--stalls") == 0 && i+1 < argc) {
@@ -198,10 +194,6 @@ int main(int argc, const char *argv[]) {
         }
         if (strcmp(argv[i], "--max_lock_memory") == 0 && i+1 < argc) {
             max_lock_memory = atoll(argv[++i]);
-            continue;
-        }
-        if (strcmp(argv[i], "--delay") == 0 && i+1 < argc) {
-            delay = atoll(argv[++i]);
             continue;
         }
         if (strcmp(argv[i], "--check_lock_tree_constraints") == 0 && i+1 < argc) {
@@ -216,14 +208,14 @@ int main(int argc, const char *argv[]) {
     locktree::manager mgr;
     mgr.create(nullptr, nullptr, e_callback, nullptr);
     mgr.set_max_lock_memory(max_lock_memory);
-    mgr.set_escalator_delay(delay);
     mgr.set_escalator_verbose(verbose != 0);
 
     // create lock trees
-    DESCRIPTOR desc[n_big];
-    DICTIONARY_ID dict_id[n_big];
+    const int n_lt = 1;
+    DESCRIPTOR desc[n_lt];
+    DICTIONARY_ID dict_id[n_lt];
     locktree *lt[n_big];
-    for (int i = 0; i < n_big; i++) {
+    for (int i = 0; i < n_lt; i++) {
         desc[i] = nullptr;
         dict_id[i] = { (uint64_t)i };
         lt[i] = mgr.get_lt(dict_id[i], desc[i], compare_dbts, nullptr);
@@ -235,7 +227,7 @@ int main(int argc, const char *argv[]) {
     struct arg big_arg[n_big];
     pthread_t big_ids[n_big];
     for (int i = 0; i < n_big; i++) {
-        big_arg[i] = { &mgr, lt[i], (TXNID)(1000+i) };
+        big_arg[i] = { &mgr, lt[0], (TXNID)(1000+i), i == 0 ? 1 : -1000000000 };
         r = toku_pthread_create(&big_ids[i], nullptr, big_f, &big_arg[i]);
         assert(r == 0);
     }
@@ -252,7 +244,7 @@ int main(int argc, const char *argv[]) {
         r = toku_pthread_join(big_ids[i], &ret);
         assert(r == 0);
     }
-    for (int i = 0; i < n_big ; i++) {
+    for (int i = 0; i < n_lt ; i++) {
         mgr.release_lt(lt[i]);
     }
     mgr.destroy();
