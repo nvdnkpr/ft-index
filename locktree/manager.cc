@@ -120,7 +120,6 @@ void locktree::manager::create(lt_create_cb create_cb, lt_destroy_cb destroy_cb,
     ZERO_STRUCT(m_escalation_stats);
     toku_mutex_init(&m_escalation_stats.m_escalation_mutex, nullptr);
     m_escalator.create();
-    m_escalator_delay = 0;
     m_escalator_verbose = 0;
 }
 
@@ -322,9 +321,20 @@ void locktree::manager::release_lt(locktree *lt) {
 }
 
 // test-only version of lock escalation
+#if TOKU_LOCKTREE_ESCALATOR_LAMBDA
 void locktree::manager::run_escalation_for_test(void) {
     m_escalator.run(this, [this] () -> void { run_escalation(); });
 }
+#else
+static void manager_escalator_fun(void *extra) {
+    locktree::manager *thismanager = (locktree::manager *) extra;
+    thismanager->run_escalation();
+}
+
+void locktree::manager::run_escalation_for_test(void) {
+    m_escalator.run(this, manager_escalator_fun, this);
+}
+#endif
 
 static int cmp_locktree_sizes(const void *a, const void *b) {
     const locktree *a_lt = *(locktree **)a;
@@ -366,7 +376,11 @@ int locktree::manager::check_current_lock_constraints(void) {
     // mutex and check again. if we're still out of locks, run escalation.
     // return an error if we're still out of locks after escalation.
     if (out_of_locks()) {
+#if TOKU_LOCKTREE_ESCALATOR_LAMBDA
         m_escalator.run(this, [this] () -> void { run_escalation(); });
+#else
+        m_escalator.run(this, manager_escalator_fun, this);
+#endif
         if (out_of_locks()) {
             r = TOKUDB_OUT_OF_LOCKS;
         }
@@ -418,14 +432,6 @@ int locktree::manager::iterate_pending_lock_requests(
     }
     mutex_unlock();
     return r;
-}
-
-void locktree::manager::set_escalator_delay(uint64_t delay) {
-    m_escalator_delay = delay;
-}
-
-uint64_t locktree::manager::get_escalator_delay(void) {
-    return m_escalator_delay;
 }
 
 void locktree::manager::set_escalator_verbose(bool verbose) {
@@ -575,18 +581,22 @@ void locktree::escalator::destroy(void) {
     toku_mutex_destroy(&m_escalator_mutex);
 }
 
+#if TOKU_LOCKTREE_ESCALATOR_LAMBDA
 void locktree::escalator::run(locktree::manager *mgr, std::function<void (void)> escalate_locktrees_fun) {
+#else
+    void locktree::escalator::run(locktree::manager *mgr, void (*escalate_locktrees_fun)(void *extra), void *extra) {
+#endif
     uint64_t t0 = toku_current_time_microsec();
     toku_mutex_lock(&m_escalator_mutex);
     if (!m_escalator_running) {
         // run escalation on this thread
         m_escalator_running = true;
         toku_mutex_unlock(&m_escalator_mutex);
-        uint64_t delay = mgr->get_escalator_delay();
-        if (delay) {
-            usleep(delay);
-        }
+#if TOKU_LOCKTREE_ESCALATOR_LAMBDA
         escalate_locktrees_fun();
+#else
+        escalate_locktrees_fun(extra);
+#endif
         toku_mutex_lock(&m_escalator_mutex);
         m_escalator_running = false;
         toku_cond_broadcast(&m_escalator_done);
