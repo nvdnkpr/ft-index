@@ -327,10 +327,9 @@ void locktree::manager::run_escalation_for_test(void) {
 }
 
 static int cmp_locktree_sizes(const void *a, const void *b) {
-    printf("cmp %p %p\n", a, b);
-    const locktree *a_lt = reinterpret_cast<const locktree *>(a);
+    const locktree *a_lt = *(locktree **)a;
     uint64_t a_size = a_lt->get_mem_used();
-    const locktree *b_lt = reinterpret_cast<const locktree *>(b);
+    const locktree *b_lt = *(locktree **)b;
     uint64_t b_size = b_lt->get_mem_used();
     if (a_size < b_size)
         return +1;
@@ -350,7 +349,6 @@ void locktree::manager::run_escalation(void) {
     for (int i = 0; i < num_locktrees; i++) {
         int r = m_locktree_map.fetch(i, &locktrees[i]);
         invariant_zero(r);
-        printf("qsort %p\n", locktrees[i]);
     }
 
     // sort locktrees from largest to smallest
