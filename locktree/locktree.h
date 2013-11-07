@@ -228,11 +228,11 @@ public:
     public:
         void create(void);
         void destroy(void);
-        void run(locktree **locktrees, int num_locktrees, locktree::manager *mgr, std::function<bool (void)> out_of_locks);
+        void run(manager *mgr, std::function<void (void)> escalate_locktrees_fun);
     private:
         toku_mutex_t m_escalator_mutex;
         toku_cond_t m_escalator_done;
-        int m_escalator_state;
+        bool m_escalator_running;
     };
     ENSURE_POD(escalator);
 

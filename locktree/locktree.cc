@@ -786,8 +786,7 @@ int locktree::check_current_lock_constraints(void) {
     if (m_check_lock_tree_constraints && out_of_locks()) {
         if (m_mgr->get_escalator_verbose())
             fprintf(stderr, "%u escalating %p %" PRIu64 " %" PRIu64 "\n", toku_os_gettid(), this, m_current_lock_memory, m_mgr->get_max_lock_memory());
-        locktree *locktrees[1] = { this };
-        m_escalator.run(locktrees, 1, m_mgr, [this] () -> bool { return out_of_locks(); });
+        m_escalator.run(m_mgr, [this] () -> void { locktree *locktrees[1] = { this }; m_mgr->escalate_locktrees(locktrees, 1); });
         if (out_of_locks()) {
             r = TOKUDB_OUT_OF_LOCKS;
         }
