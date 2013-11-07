@@ -144,7 +144,7 @@ static uint64_t get_escalation_count(locktree::manager &mgr) {
 
 int main(int argc, const char *argv[]) {
     uint64_t max_lock_memory = 1000;
-    bool check_lock_tree_constraints = true;
+    bool check_lock_tree_constraints = false;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
