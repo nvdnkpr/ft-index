@@ -323,10 +323,11 @@ void locktree::manager::release_lt(locktree *lt) {
 
 // test-only version of lock escalation
 void locktree::manager::run_escalation_for_test(void) {
-    run_escalation();
+    m_escalator.run(this, [this] () -> void { run_escalation(); });
 }
 
 static int cmp_locktree_sizes(const void *a, const void *b) {
+    printf("cmp %p %p\n", a, b);
     const locktree *a_lt = reinterpret_cast<const locktree *>(a);
     uint64_t a_size = a_lt->get_mem_used();
     const locktree *b_lt = reinterpret_cast<const locktree *>(b);
@@ -340,23 +341,24 @@ static int cmp_locktree_sizes(const void *a, const void *b) {
 }
 
 void locktree::manager::run_escalation(void) {
+    // TODO maybe add refs to the locktrees so that the manager lock can be released
+    // while escalate_locktrees is running
     mutex_lock();
-    if (out_of_locks()) {
-        // get all locktrees
-        int num_locktrees = m_locktree_map.size();
-        locktree **locktrees = new locktree *[num_locktrees];
-        for (int i = 0; i < num_locktrees; i++) {
-            int r = m_locktree_map.fetch(i, &locktrees[i]);
-            invariant_zero(r);
-        }
-
-        // sort locktrees from largest to smallest
-        qsort(locktrees, num_locktrees, sizeof (locktree *), cmp_locktree_sizes);
-        
-        // run escalation
-        m_escalator.run(locktrees, num_locktrees, this, [this] () -> bool { return out_of_locks(); });
-        delete [] locktrees;
+    // get all locktrees
+    int num_locktrees = m_locktree_map.size();
+    locktree **locktrees = new locktree *[num_locktrees];
+    for (int i = 0; i < num_locktrees; i++) {
+        int r = m_locktree_map.fetch(i, &locktrees[i]);
+        invariant_zero(r);
+        printf("qsort %p\n", locktrees[i]);
     }
+
+    // sort locktrees from largest to smallest
+    qsort(locktrees, num_locktrees, sizeof (locktree *), cmp_locktree_sizes);
+        
+    // run escalation
+    escalate_locktrees(locktrees, num_locktrees);
+    delete [] locktrees;
     mutex_unlock();
 }
 
@@ -366,7 +368,7 @@ int locktree::manager::check_current_lock_constraints(void) {
     // mutex and check again. if we're still out of locks, run escalation.
     // return an error if we're still out of locks after escalation.
     if (out_of_locks()) {
-        run_escalation();
+        m_escalator.run(this, [this] () -> void { run_escalation(); });
         if (out_of_locks()) {
             r = TOKUDB_OUT_OF_LOCKS;
         }
@@ -567,7 +569,7 @@ void locktree::escalator::create(void) {
     ZERO_STRUCT(m_escalator_mutex);
     toku_mutex_init(&m_escalator_mutex, nullptr);
     toku_cond_init(&m_escalator_done, nullptr);
-    m_escalator_state = 0;
+    m_escalator_running = false;
 }
 
 void locktree::escalator::destroy(void) {
@@ -575,51 +577,25 @@ void locktree::escalator::destroy(void) {
     toku_mutex_destroy(&m_escalator_mutex);
 }
 
-void locktree::escalator::run(locktree **locktrees, int num_locktrees, locktree::manager *mgr, std::function<bool (void)> out_of_locks) {
+void locktree::escalator::run(locktree::manager *mgr, std::function<void (void)> escalate_locktrees_fun) {
     uint64_t t0 = toku_current_time_microsec();
     toku_mutex_lock(&m_escalator_mutex);
-    int i;
-    for (i = 0; i < 10; i++) {
-        if (mgr->get_escalator_verbose())
-            fprintf(stderr, "%u %s:%u n=%d i=%d\n", toku_os_gettid(), "toku::locktree::escalator::run", __LINE__, num_locktrees, i);
-        if (m_escalator_state == 0) {
-            // run escalation on this thread
-            m_escalator_state = 1;
-            toku_mutex_unlock(&m_escalator_mutex);
-            uint64_t delay = mgr->get_escalator_delay();
-            if (delay) {
-                usleep(delay);
-            }
-            mgr->escalate_locktrees(locktrees, num_locktrees);
-            toku_mutex_lock(&m_escalator_mutex);
-            m_escalator_state = 0;
-            toku_cond_broadcast(&m_escalator_done);
-            break;
-        } else {
-            struct timeval tv;
-            int r;
-            r = gettimeofday(&tv, 0);
-            assert_zero(r);
-            uint64_t t = tv.tv_sec * 1000000 + tv.tv_usec;
-            t += 100000; // 100 milliseconds
-            toku_timespec_t wakeup_time;
-            wakeup_time.tv_sec = t / 1000000;
-            wakeup_time.tv_nsec = (t % 1000000) * 1000;
-            r = toku_cond_timedwait(&m_escalator_done, &m_escalator_mutex, &wakeup_time);
-            assert(r == 0 || r == ETIMEDOUT);
-            if (!out_of_locks())
-                break;
+    if (!m_escalator_running) {
+        // run escalation on this thread
+        m_escalator_running = true;
+        toku_mutex_unlock(&m_escalator_mutex);
+        uint64_t delay = mgr->get_escalator_delay();
+        if (delay) {
+            usleep(delay);
         }
+        escalate_locktrees_fun();
+        toku_mutex_lock(&m_escalator_mutex);
+        m_escalator_running = false;
+        toku_cond_broadcast(&m_escalator_done);
+    } else {
+        toku_cond_wait(&m_escalator_done, &m_escalator_mutex);
     }
     toku_mutex_unlock(&m_escalator_mutex);
-    if (i != 0 && mgr->get_escalator_verbose()) {
-        const int tstr_length = 26;
-        char tstr[tstr_length];
-        time_t t = time(0);
-        ctime_r(&t, tstr);
-        fprintf(stderr, "%.24s %u toku::locktree::escalator::%s n=%d i=%d\n", tstr, toku_os_gettid(), __FUNCTION__, num_locktrees, i);
-    }
-
     uint64_t t1 = toku_current_time_microsec();
     mgr->add_escalator_wait_time(t1 - t0);
 }
