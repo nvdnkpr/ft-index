@@ -455,7 +455,7 @@ void locktree::manager::escalate_locktrees(locktree *locktrees[], int num_locktr
     tokutime_t t0 = toku_time_now();
     for (int i = 0; i < num_locktrees; i++) {
         locktrees[i]->escalate(m_lt_escalate_callback, m_lt_escalate_callback_extra);
-        if (2 * m_current_lock_memory < m_max_lock_memory) {
+        if (4 * m_current_lock_memory < 3 * m_max_lock_memory) { // current < 3/4 max
             break;
         }
     }

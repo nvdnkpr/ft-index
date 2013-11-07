@@ -122,7 +122,7 @@ static void run_big_txn(locktree::manager *mgr UU(), locktree *lt, TXNID txn_id,
     fprintf(stderr, "%u run_big_txn %p %" PRIu64 " %" PRId64 "\n", toku_os_gettid(), lt, txn_id, start_i);
     int64_t last_i = -1;
     for (int64_t i = start_i; !killed; i++) {
-        if (verbose)
+        if (0)
             printf("%u %" PRId64 "\n", toku_os_gettid(), i);
         uint64_t t_start = toku_current_time_microsec();
         int r = locktree_write_lock(lt, txn_id, i, i);
@@ -137,7 +137,7 @@ static void run_big_txn(locktree::manager *mgr UU(), locktree *lt, TXNID txn_id,
         toku_pthread_yield();
     }
     if (last_i != -1)
-        locktree_release_lock(lt, txn_id, start_i, last_i); // release the range 0 .. last_i
+        locktree_release_lock(lt, txn_id, start_i, last_i); // release the range start_i .. last_i
 }
 
 struct arg {
@@ -178,7 +178,8 @@ static uint64_t get_escalation_count(locktree::manager &mgr) {
 }
 
 int main(int argc, const char *argv[]) {
-    int n_big = 2;
+    const int n_big = 2;
+    int n_lt = 1;
     uint64_t stalls = 1;
     uint64_t max_lock_memory = 1000000;
     bool check_lock_tree_constraints = true;
@@ -190,6 +191,10 @@ int main(int argc, const char *argv[]) {
         }
         if (strcmp(argv[i], "--stalls") == 0 && i+1 < argc) {
             stalls = atoll(argv[++i]);
+            continue;
+        }
+        if (strcmp(argv[i], "--n_lt") == 0 && i+1 < argc) {
+            n_lt = atoi(argv[++i]);
             continue;
         }
         if (strcmp(argv[i], "--max_lock_memory") == 0 && i+1 < argc) {
@@ -211,7 +216,6 @@ int main(int argc, const char *argv[]) {
     mgr.set_escalator_verbose(verbose != 0);
 
     // create lock trees
-    const int n_lt = 1;
     DESCRIPTOR desc[n_lt];
     DICTIONARY_ID dict_id[n_lt];
     locktree *lt[n_big];
@@ -227,7 +231,7 @@ int main(int argc, const char *argv[]) {
     struct arg big_arg[n_big];
     pthread_t big_ids[n_big];
     for (int i = 0; i < n_big; i++) {
-        big_arg[i] = { &mgr, lt[0], (TXNID)(1000+i), i == 0 ? 1 : -1000000000 };
+        big_arg[i] = { &mgr, lt[i % n_lt], (TXNID)(1000+i), i == 0 ? 1 : -1000000000 };
         r = toku_pthread_create(&big_ids[i], nullptr, big_f, &big_arg[i]);
         assert(r == 0);
     }
