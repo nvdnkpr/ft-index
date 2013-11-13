@@ -121,6 +121,7 @@ void locktree::manager::create(lt_create_cb create_cb, lt_destroy_cb destroy_cb,
     toku_mutex_init(&m_escalation_stats.m_escalation_mutex, nullptr);
     m_escalator.create();
     m_escalator_verbose = 0;
+    m_get_mem_used_by_txn_cb = nullptr;
 }
 
 void locktree::manager::destroy(void) {
@@ -403,6 +404,18 @@ uint64_t locktree::manager::get_mem_used(void) {
 
 bool locktree::manager::out_of_locks(void) const {
     return m_current_lock_memory > m_max_lock_memory;
+}
+
+void locktree::manager::set_mem_used_by_txn(uint64_t (*get_mem_used_by_txn_cb)(TXNID, void *)) {
+    m_get_mem_used_by_txn_cb = get_mem_used_by_txn_cb;
+}
+
+uint64_t locktree::manager::get_mem_used_by_txn(TXNID txn_id, void *txn_extra) {
+    uint64_t s = 0;
+    if (m_get_mem_used_by_txn_cb) {
+        s = m_get_mem_used_by_txn_cb(txn_id, txn_extra);
+    }
+    return s;
 }
 
 int locktree::manager::iterate_pending_lock_requests(

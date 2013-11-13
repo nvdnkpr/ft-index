@@ -136,6 +136,8 @@ public:
     void set(locktree *lt, TXNID txnid,
             const DBT *left_key, const DBT *right_key, type lock_type);
 
+    void set_extra(void *txn_extra, bool big_txn);
+
     // effect: Tries to acquire a lock described by this lock request.
     // returns: The return code of locktree::acquire_[write,read]_lock()
     //          or DB_LOCK_DEADLOCK if this request would end up deadlocked.
@@ -197,6 +199,9 @@ private:
     state m_state;
 
     toku_cond_t m_wait_cond;
+
+    void *m_txn_extra;
+    bool m_big_txn;
 
     // the lock request info state stored in the
     // locktree that this lock request is for.

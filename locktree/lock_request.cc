@@ -115,6 +115,9 @@ void lock_request::create(void) {
     m_state = state::UNINITIALIZED;
 
     toku_cond_init(&m_wait_cond, nullptr);
+
+    m_txn_extra = nullptr;
+    m_big_txn = false;
 }
 
 // destroy a lock request.
@@ -138,6 +141,11 @@ void lock_request::set(locktree *lt, TXNID txnid,
     m_type = lock_type;
     m_state = state::INITIALIZED;
     m_info = lt->get_lock_request_info();
+}
+
+void lock_request::set_extra(void *txn_extra, bool big_txn) {
+    m_txn_extra = txn_extra;
+    m_big_txn = big_txn;
 }
 
 // get rid of any stored left and right key copies and

@@ -177,6 +177,10 @@ public:
     int acquire_write_lock(TXNID txnid,
             const DBT *left_key, const DBT *right_key, txnid_set *conflicts);
 
+    int acquire_write_lock(TXNID txnid,
+            const DBT *left_key, const DBT *right_key, txnid_set *conflicts,
+            void *txn_extra, bool big_txn);
+
     // effect: populate the conflicts set with the txnids that would preventing
     //         the given txnid from getting a lock on [left_key, right_key]
     void get_conflicts(bool is_write_request, TXNID txnid,
@@ -295,6 +299,8 @@ public:
         void note_mem_used(uint64_t mem_used);
         void note_mem_released(uint64_t mem_freed);
         uint64_t get_mem_used(void);
+        void set_mem_used_by_txn(uint64_t (*cb)(TXNID, void *));
+        uint64_t get_mem_used_by_txn(TXNID txn_id, void *txn_extra);
 
         void get_status(LTM_STATUS status);
 
@@ -337,6 +343,8 @@ public:
         uint64_t m_current_lock_memory;
 
         bool out_of_locks(void) const;
+
+        uint64_t (*m_get_mem_used_by_txn_cb)(TXNID, void *);
 
         struct lt_counters m_lt_counters;
 
@@ -586,11 +594,11 @@ private:
             const DBT *left_key, const DBT *right_key, txnid_set *conflicts);
 
     int try_acquire_lock(bool is_write_request, TXNID txnid,
-            const DBT *left_key, const DBT *right_key, txnid_set *conflicts);
+            const DBT *left_key, const DBT *right_key, txnid_set *conflicts, void *txn_extra, bool big_txn);
 
     void escalate(manager::lt_escalate_cb after_escalate_callback, void *extra);
 
-    int check_current_lock_constraints(void);
+    int check_current_lock_constraints(TXNID txn_id, void *txn_extra, bool big_txn);
 
     bool out_of_locks(void) const;
 
