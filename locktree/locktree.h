@@ -92,6 +92,7 @@ PATENT RIGHTS GRANT:
 #ifndef TOKU_LOCKTREE_H
 #define TOKU_LOCKTREE_H
 
+#define TOKU_LOCKTREE_ESCALATOR_LAMBDA 1
 #if TOKU_LOCKTREE_ESCALATOR_LAMBDA
 #include <functional>
 #endif
@@ -274,6 +275,8 @@ public:
 
         void set_lock_wait_time(uint64_t lock_wait_time, uint64_t (*get_lock_wait_time_cb)(uint64_t default_lock_wait_time));
 
+        void set_get_locktrees_touched_by_txn(int (*get_locktrees_touched_by_txn)(TXNID, void *, locktree***, int*));
+
         // effect: Get a locktree from the manager. If a locktree exists with the given
         //         dict_id, it is referenced and then returned. If one did not exist, it
         //         is created. It will use the given descriptor and comparison function
@@ -293,14 +296,12 @@ public:
         // returns: 0 if there enough resources to create a new lock, or TOKUDB_OUT_OF_LOCKS 
         //          if there are not enough resources and lock escalation failed to free up
         //          enough resources for a new lock.
-        int check_current_lock_constraints(void);
+        int check_current_lock_constraints(TXNID txn_id, void *txn_extra, bool big_txn);
 
         // Adjust the memory used by all locktrees managed by this manager
         void note_mem_used(uint64_t mem_used);
         void note_mem_released(uint64_t mem_freed);
         uint64_t get_mem_used(void);
-        void set_mem_used_by_txn(uint64_t (*cb)(TXNID, void *));
-        uint64_t get_mem_used_by_txn(TXNID txn_id, void *txn_extra);
 
         void get_status(LTM_STATUS status);
 
@@ -343,8 +344,6 @@ public:
         uint64_t m_current_lock_memory;
 
         bool out_of_locks(void) const;
-
-        uint64_t (*m_get_mem_used_by_txn_cb)(TXNID, void *);
 
         struct lt_counters m_lt_counters;
 
@@ -399,6 +398,8 @@ public:
 
         escalator m_escalator;
         bool m_escalator_verbose;
+
+        int (*m_get_locktrees_touched_by_txn)(TXNID, void *, locktree ***, int *);
 
         friend class manager_unit_test;
     };

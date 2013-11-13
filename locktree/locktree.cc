@@ -801,6 +801,7 @@ static void locktree_escalator_fun(void *extra) {
 int locktree::check_current_lock_constraints(TXNID txn_id, void *txn_extra, bool big_txn) {
     int r = 0;
     // check local constraints
+#if 0
     if (m_check_lock_tree_constraints) {
         bool do_escalate = false;
         if (out_of_locks()) {
@@ -819,14 +820,29 @@ int locktree::check_current_lock_constraints(TXNID txn_id, void *txn_extra, bool
 #else
             m_escalator.run(m_mgr, locktree_escalator_fun, this);
 #endif
+
             if (out_of_locks()) {
                 r = TOKUDB_OUT_OF_LOCKS;
             }
         }
     }
+#else
+    if (m_check_lock_tree_constraints && out_of_locks()) {
+        if (m_mgr->get_escalator_verbose())
+            fprintf(stderr, "%u escalating %p %" PRIu64 " %" PRIu64 "\n", toku_os_gettid(), this, m_current_lock_memory, m_mgr->get_max_lock_memory());
+#if TOKU_LOCKTREE_ESCALATOR_LAMBDA
+        m_escalator.run(m_mgr, [this] () -> void { locktree *locktrees[1] = { this }; m_mgr->escalate_locktrees(locktrees, 1); });
+#else
+        m_escalator.run(m_mgr, locktree_escalator_fun, this);
+#endif
+        if (out_of_locks()) {
+            r = TOKUDB_OUT_OF_LOCKS;
+        }
+    }
+#endif
     // check global constraints
     if (r == 0) {
-        r = m_mgr->check_current_lock_constraints();
+        r = m_mgr->check_current_lock_constraints(txn_id, txn_extra, big_txn);
     }
     return r;
 }

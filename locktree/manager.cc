@@ -121,7 +121,7 @@ void locktree::manager::create(lt_create_cb create_cb, lt_destroy_cb destroy_cb,
     toku_mutex_init(&m_escalation_stats.m_escalation_mutex, nullptr);
     m_escalator.create();
     m_escalator_verbose = 0;
-    m_get_mem_used_by_txn_cb = nullptr;
+    m_get_locktrees_touched_by_txn = nullptr;
 }
 
 void locktree::manager::destroy(void) {
@@ -131,6 +131,10 @@ void locktree::manager::destroy(void) {
     invariant(m_locktree_map.size() == 0);
     m_locktree_map.destroy();
     toku_mutex_destroy(&m_mutex);
+}
+
+void locktree::manager::set_get_locktrees_touched_by_txn(int (*get_locktrees_touched_by_txn)(TXNID, void *, locktree ***, int *)) {
+    m_get_locktrees_touched_by_txn = get_locktrees_touched_by_txn;
 }
 
 void locktree::manager::mutex_lock(void) {
@@ -327,13 +331,13 @@ void locktree::manager::run_escalation_for_test(void) {
     m_escalator.run(this, [this] () -> void { run_escalation(); });
 }
 #else
-static void manager_escalator_fun(void *extra) {
+static void manager_run_escalation_fun(void *extra) {
     locktree::manager *thismanager = (locktree::manager *) extra;
     thismanager->run_escalation();
 }
 
 void locktree::manager::run_escalation_for_test(void) {
-    m_escalator.run(this, manager_escalator_fun, this);
+    m_escalator.run(this, manager_run_escalation_fun, this);
 }
 #endif
 
@@ -371,16 +375,48 @@ void locktree::manager::run_escalation(void) {
     mutex_unlock();
 }
 
-int locktree::manager::check_current_lock_constraints(void) {
+static uint64_t sum_used_memory(locktree **locktrees, int num_locktrees) {
+    uint64_t s = 0;
+    for (int i = 0; i < num_locktrees; i++) {
+        s += locktrees[i]->get_mem_used();
+    }
+    return s;
+}
+
+int locktree::manager::check_current_lock_constraints(TXNID txn_id, void *txn_extra, bool big_txn) {
     int r = 0;
+
+    uint64_t half_limit = m_max_lock_memory / 2;
+    if (m_current_lock_memory > half_limit && big_txn) {
+        locktree **locktrees = nullptr;
+        int num_locktrees = 0;
+        if (m_get_locktrees_touched_by_txn && m_get_locktrees_touched_by_txn(txn_id, txn_extra, &locktrees, &num_locktrees) == 0) {
+            if (sum_used_memory(locktrees, num_locktrees) > half_limit) {
+
+                // sort locktrees from largest to smallest
+                qsort(locktrees, num_locktrees, sizeof (locktree *), cmp_locktree_sizes);
+
+#if TOKU_LOCKTREE_ESCALATOR_LAMBDA
+                m_escalator.run(this, [this,locktrees,num_locktrees] () -> void { escalate_locktrees(locktrees, num_locktrees); });
+#else
+#error
+#endif
+                if (sum_used_memory(locktrees, num_locktrees) > half_limit) {
+                    r = TOKUDB_OUT_OF_LOCKS;
+                }
+            }
+            delete locktrees;
+        }
+    }
+
     // check if we're out of locks without the mutex first. then, grab the
     // mutex and check again. if we're still out of locks, run escalation.
     // return an error if we're still out of locks after escalation.
-    if (out_of_locks()) {
+    if (r == 0 && out_of_locks()) {
 #if TOKU_LOCKTREE_ESCALATOR_LAMBDA
         m_escalator.run(this, [this] () -> void { run_escalation(); });
 #else
-        m_escalator.run(this, manager_escalator_fun, this);
+        m_escalator.run(this, manager_run_escalation_fun, this);
 #endif
         if (out_of_locks()) {
             r = TOKUDB_OUT_OF_LOCKS;
@@ -404,18 +440,6 @@ uint64_t locktree::manager::get_mem_used(void) {
 
 bool locktree::manager::out_of_locks(void) const {
     return m_current_lock_memory > m_max_lock_memory;
-}
-
-void locktree::manager::set_mem_used_by_txn(uint64_t (*get_mem_used_by_txn_cb)(TXNID, void *)) {
-    m_get_mem_used_by_txn_cb = get_mem_used_by_txn_cb;
-}
-
-uint64_t locktree::manager::get_mem_used_by_txn(TXNID txn_id, void *txn_extra) {
-    uint64_t s = 0;
-    if (m_get_mem_used_by_txn_cb) {
-        s = m_get_mem_used_by_txn_cb(txn_id, txn_extra);
-    }
-    return s;
 }
 
 int locktree::manager::iterate_pending_lock_requests(
@@ -455,7 +479,7 @@ bool locktree::manager::get_escalator_verbose(void) {
     return m_escalator_verbose;
 }
 
-void locktree::manager::escalate_locktrees(locktree *locktrees[], int num_locktrees) {
+void locktree::manager::escalate_locktrees(locktree **locktrees, int num_locktrees) {
     if (get_escalator_verbose())
         fprintf(stderr, "%u %s:%u %d %" PRIu64 " %" PRIu64 "\n", toku_os_gettid(), __FUNCTION__, __LINE__, num_locktrees, m_current_lock_memory, m_max_lock_memory);
     // there are too many row locks in the system and we need to tidy up.

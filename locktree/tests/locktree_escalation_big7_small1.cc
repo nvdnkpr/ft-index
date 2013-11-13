@@ -121,11 +121,13 @@ static int locktree_write_lock(locktree *lt, TXNID txn_id, int64_t left_k, int64
 static locktree **big_txn_lt;
 static int n_big_txn_lt;
 
-static uint64_t get_mem_used_by_txn(TXNID txn_id UU(), void *txn_extra UU()) {
-    uint64_t s = 0;
+static int get_locktrees_touched_by_txn(TXNID txn_id UU(), void *txn_extra UU(), locktree ***ret_locktrees, int *ret_num_locktrees) {
+    locktree **locktrees = new locktree *[n_big_txn_lt];
     for (int i = 0; i < n_big_txn_lt; i++)
-        s += big_txn_lt[i]->get_mem_used();
-    return s;
+        locktrees[i] = big_txn_lt[i];
+    *ret_locktrees = locktrees;
+    *ret_num_locktrees = n_big_txn_lt;
+    return 0;
 }
 
 static void run_big_txn(locktree::manager *mgr UU(), locktree **lt, int n_lt, TXNID txn_id) {
@@ -246,7 +248,7 @@ int main(int argc, const char *argv[]) {
     mgr.create(nullptr, nullptr, e_callback, nullptr);
     mgr.set_max_lock_memory(max_lock_memory);
     mgr.set_escalator_verbose(verbose != 0);
-    mgr.set_mem_used_by_txn(get_mem_used_by_txn);
+    mgr.set_get_locktrees_touched_by_txn(get_locktrees_touched_by_txn);
 
     // create lock trees
     uint64_t next_dict_id = 1;
