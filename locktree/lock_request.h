@@ -134,9 +134,7 @@ public:
     // effect: Resets the lock request parameters, allowing it to be reused.
     // requires: Lock request was already created at some point
     void set(locktree *lt, TXNID txnid,
-            const DBT *left_key, const DBT *right_key, type lock_type);
-
-    void set_extra(void *txn_extra, bool big_txn);
+             const DBT *left_key, const DBT *right_key, type lock_type, void *txn_extra, bool big_txn);
 
     // effect: Tries to acquire a lock described by this lock request.
     // returns: The return code of locktree::acquire_[write,read]_lock()

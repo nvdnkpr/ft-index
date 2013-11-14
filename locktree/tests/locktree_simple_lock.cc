@@ -115,8 +115,8 @@ void locktree_unit_test::test_simple_lock(void) {
         // test_run == 0 means test with read lock
         // test_run == 1 means test with write lock
 #define ACQUIRE_LOCK(txn, left, right, conflicts) \
-        test_run == 0 ? lt->acquire_read_lock(txn, left, right, conflicts) \
-                      : lt->acquire_write_lock(txn, left, right, conflicts)
+        test_run == 0 ? lt->acquire_read_lock(txn, left, right, conflicts, nullptr, false) \
+            : lt->acquire_write_lock(txn, left, right, conflicts, nullptr, false)
 
         // four txns, four points
         r = ACQUIRE_LOCK(txnid_a, one, one, nullptr);
@@ -178,7 +178,7 @@ void locktree_unit_test::test_simple_lock(void) {
 
     for (int64_t i = 0; i < num_locks; i++) {
         k.data = (void *) &keys[i];
-        r = lt->acquire_read_lock(txnid_a, &k, &k, nullptr);
+        r = lt->acquire_read_lock(txnid_a, &k, &k, nullptr, nullptr, false);
         invariant(r == 0);
     }
 

@@ -169,18 +169,15 @@ public:
     // note: Read locks cannot be shared between txnids, as one would expect.
     //       This is for simplicity since read locks are rare in MySQL.
     int acquire_read_lock(TXNID txnid,
-            const DBT *left_key, const DBT *right_key, txnid_set *conflicts);
+            const DBT *left_key, const DBT *right_key, txnid_set *conflicts, void *txn_extra, bool big_txn);
+
 
     // effect: Attempts to grant a write lock for the range of keys between [left_key, right_key].
     // returns: If the lock cannot be granted, return DB_LOCK_NOTGRANTED, and populate the
     //          given conflicts set with the txnids that hold conflicting locks in the range.
     //          If the locktree cannot create more locks, return TOKUDB_OUT_OF_LOCKS.
     int acquire_write_lock(TXNID txnid,
-            const DBT *left_key, const DBT *right_key, txnid_set *conflicts);
-
-    int acquire_write_lock(TXNID txnid,
-            const DBT *left_key, const DBT *right_key, txnid_set *conflicts,
-            void *txn_extra, bool big_txn);
+            const DBT *left_key, const DBT *right_key, txnid_set *conflicts, void *txn_extra, bool big_txn);
 
     // effect: populate the conflicts set with the txnids that would preventing
     //         the given txnid from getting a lock on [left_key, right_key]

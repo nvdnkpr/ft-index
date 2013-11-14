@@ -396,11 +396,14 @@ int locktree::manager::check_current_lock_constraints(TXNID txn_id, void *txn_ex
                 // sort locktrees from largest to smallest
                 qsort(locktrees, num_locktrees, sizeof (locktree *), cmp_locktree_sizes);
 
+                locktree::escalator this_escalator;
+                this_escalator.create();
 #if TOKU_LOCKTREE_ESCALATOR_LAMBDA
-                m_escalator.run(this, [this,locktrees,num_locktrees] () -> void { escalate_locktrees(locktrees, num_locktrees); });
+                this_escalator.run(this, [this,locktrees,num_locktrees] () -> void { escalate_locktrees(locktrees, num_locktrees); });
 #else
 #error
 #endif
+                this_escalator.destroy();
                 if (sum_used_memory(locktrees, num_locktrees) > half_limit) {
                     r = TOKUDB_OUT_OF_LOCKS;
                 }

@@ -115,7 +115,7 @@ static void locktree_release_lock(locktree *lt, TXNID txn_id, int64_t left_k, in
 static int locktree_write_lock(locktree *lt, TXNID txn_id, int64_t left_k, int64_t right_k) {
     DBT left; toku_fill_dbt(&left, &left_k, sizeof left_k);
     DBT right; toku_fill_dbt(&right, &right_k, sizeof right_k);
-    return lt->acquire_write_lock(txn_id, &left, &right, nullptr);
+    return lt->acquire_write_lock(txn_id, &left, &right, nullptr, nullptr, false);
 }
 
 static void run_big_txn(locktree::manager *mgr UU(), locktree *lt, TXNID txn_id, int64_t start_i) {

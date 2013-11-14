@@ -424,18 +424,12 @@ int locktree::try_acquire_lock(bool is_write_request, TXNID txnid,
 
 // the locktree silently upgrades read locks to write locks for simplicity
 int locktree::acquire_read_lock(TXNID txnid,
-        const DBT *left_key, const DBT *right_key, txnid_set *conflicts) {
-    return acquire_write_lock(txnid, left_key, right_key, conflicts);
+        const DBT *left_key, const DBT *right_key, txnid_set *conflicts, void *txn_extra, bool big_txn) {
+    return acquire_write_lock(txnid, left_key, right_key, conflicts, txn_extra, big_txn);
 }
 
 int locktree::acquire_write_lock(TXNID txnid,
-        const DBT *left_key, const DBT *right_key, txnid_set *conflicts) {
-    return try_acquire_lock(true, txnid, left_key, right_key, conflicts, nullptr, 0);
-}
-
-int locktree::acquire_write_lock(TXNID txnid,
-         const DBT *left_key, const DBT *right_key, txnid_set *conflicts,
-         void *txn_extra, bool big_txn) {
+        const DBT *left_key, const DBT *right_key, txnid_set *conflicts, void *txn_extra, bool big_txn) {
     return try_acquire_lock(true, txnid, left_key, right_key, conflicts, txn_extra, big_txn);
 }
 
