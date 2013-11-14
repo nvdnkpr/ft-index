@@ -605,7 +605,7 @@ ftnode_memory_size (FTNODE node)
     retval += (n_children)*(sizeof(node->bp[0]));
 
     //TODO: Does not count memory for 'DBT *childkeys' (is that null for leaves? NOPE always there)
-    retval += (n_children > 0 ? n_children-1 : 0)*(sizeof(node->childkeys[0]));
+    retval += (n_children-1)*(sizeof(node->childkeys[0]));
     retval += node->totalchildkeylens;
 
     // now calculate the sizes of the partitions
