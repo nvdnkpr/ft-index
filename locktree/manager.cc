@@ -408,7 +408,7 @@ int locktree::manager::check_current_lock_constraints(TXNID txn_id, void *txn_ex
                     r = TOKUDB_OUT_OF_LOCKS;
                 }
             }
-            delete locktrees;
+            delete [] locktrees;
         }
     }
 
