@@ -503,7 +503,8 @@ int dmt<dmtdata_t, dmtdataout_t>::find(const dmtcmp_t &extra, int direction, uin
 
 template<typename dmtdata_t, typename dmtdataout_t>
 size_t dmt<dmtdata_t, dmtdataout_t>::memory_size(void) {
-    return (sizeof *this) + toku_mempool_get_size(&this->mp);
+    //TODO: fix introduced bug of not counting when we used temp space (needs to be counted from then on) (don't think this affects arrays)
+    return (sizeof *this) + toku_mempool_footprint(&this->mp);
 }
 
 template<typename dmtdata_t, typename dmtdataout_t>
