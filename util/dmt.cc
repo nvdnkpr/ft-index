@@ -1147,7 +1147,22 @@ void dmt<dmtdata_t, dmtdataout_t>::builder::build_and_destroy(dmt<dmtdata_t, dmt
         this->sorted_nodes = nullptr;
     }
     paranoid_invariant_null(this->sorted_nodes);
+
+    size_t max_allowed = toku_mempool_get_used_space(&this->temp.mp);
+    max_allowed += max_allowed / 4;
+    size_t allocated = toku_mempool_get_size(&this->temp.mp);
+    size_t footprint = toku_mempool_footprint(&this->temp.mp);
+    if (allocated > max_allowed && footprint > max_allowed) {
+        // Reallocate smaller mempool to save memory
+        invariant_zero(toku_mempool_get_frag_size(&this->temp.mp));
+        struct mempool new_mp;
+        toku_mempool_copy_construct(&new_mp, toku_mempool_get_base(&this->temp.mp), toku_mempool_get_used_space(&this->temp.mp));
+        toku_mempool_destroy(&this->temp.mp);
+        this->temp.mp = new_mp;
+    }
+
     *dest = this->temp;
     this->temp_valid = false;
+
 }
 } // namespace toku

@@ -193,8 +193,22 @@ void bn_data::initialize_from_data(uint32_t num_entries, unsigned char *buf, uin
     paranoid_invariant( num_bytes_written == data_size);
 #endif
     toku_mempool_init(&m_buffer_mempool, newmem, (size_t)(curr_dest_pos - newmem), allocated_bytes);
+
     paranoid_invariant(get_disk_size() == data_size);  //TODO: This may not stay correct after a disk format change.
 
+    //Maybe shrink mempool
+    size_t max_allowed = toku_mempool_get_used_space(&m_buffer_mempool);
+    max_allowed += max_allowed / 4;
+    size_t allocated = toku_mempool_get_size(&m_buffer_mempool);
+    size_t footprint = toku_mempool_footprint(&m_buffer_mempool);
+    if (allocated > max_allowed && footprint > max_allowed) {
+        // Reallocate smaller mempool to save memory
+        invariant_zero(toku_mempool_get_frag_size(&m_buffer_mempool));
+        struct mempool new_mp;
+        toku_mempool_copy_construct(&new_mp, toku_mempool_get_base(&m_buffer_mempool), toku_mempool_get_used_space(&m_buffer_mempool));
+        toku_mempool_destroy(&m_buffer_mempool);
+        m_buffer_mempool = new_mp;
+    }
 }
 
 uint64_t bn_data::get_memory_size() {
