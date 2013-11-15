@@ -104,6 +104,7 @@ PATENT RIGHTS GRANT:
 #include "memory.h"
 #include "toku_assert.h"
 #include <portability/toku_atomic.h>
+#include <toku_time.h>
 
 static malloc_fun_t  t_malloc  = 0;
 static malloc_aligned_fun_t t_malloc_aligned = 0;
@@ -116,6 +117,7 @@ static realloc_fun_t t_xrealloc = 0;
 
 static LOCAL_MEMORY_STATUS_S status;
 int toku_memory_do_stats = 0;
+int toku_memory_debug = 1;
 
 static bool memory_startup_complete;
 
@@ -320,10 +322,28 @@ toku_free(void *p) {
             toku_sync_add_and_fetch(&status.free_count, 1);
             toku_sync_add_and_fetch(&status.freed, used);
         }
-        if (t_free)
-            t_free(p);
-        else
-            os_free(p);
+        if (toku_memory_debug) {
+            uint64_t tstart = toku_current_time_microsec();
+            if (t_free)
+                t_free(p);
+            else
+                os_free(p);
+            uint64_t tend = toku_current_time_microsec();
+            if (tend > tstart) {
+                uint64_t tdelta = tend - tstart;
+                toku_sync_add_and_fetch(&status.free_count, 1);
+                toku_sync_add_and_fetch(&status.free_micros, tdelta);
+                if (tdelta > 1000000) {
+                    toku_sync_add_and_fetch(&status.long_free_count, 1);
+                    toku_sync_add_and_fetch(&status.long_free_micros, tdelta);
+                }
+            }
+        } else {
+            if (t_free)
+                t_free(p);
+            else
+                os_free(p);
+        }
     }
 }
 
