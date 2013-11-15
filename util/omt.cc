@@ -529,11 +529,9 @@ int omt<omtdata_t, omtdataout_t, supports_marks>::find(const omtcmp_t &extra, in
 template<typename omtdata_t, typename omtdataout_t, bool supports_marks>
 size_t omt<omtdata_t, omtdataout_t, supports_marks>::memory_size(void) {
     if (this->is_array) {
-        //TODO: fix introduced bug of not counting when parts of array were deleted
-        return (sizeof *this) + toku_memory_footprint(this->d.a.values, (this->d.a.start_idx + this->d.a.num_values) * (sizeof this->d.a.values[0]));
+        return (sizeof *this) + this->capacity * (sizeof this->d.a.values[0]);
     }
-    //TODO: fix introduced bug of not counting when we used temp space (needs to be counted from then on) (don't think this affects arrays)
-    return (sizeof *this) + toku_memory_footprint(this->d.t.nodes, this->d.t.free_idx * (sizeof this->d.t.nodes[0]));
+    return (sizeof *this) + this->capacity * (sizeof this->d.t.nodes[0]);
 }
 
 
