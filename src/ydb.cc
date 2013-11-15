@@ -1827,6 +1827,9 @@ typedef enum {
     MEMORY_MAX_IN_USE,
     MEMORY_MALLOCATOR_VERSION,
     MEMORY_MMAP_THRESHOLD,
+    MEMORY_FREE_MICROS,
+    MEMORY_LONG_FREE_COUNT,
+    MEMORY_LONG_FREE_MICROS,
     MEMORY_STATUS_NUM_ROWS
 } memory_status_entry;
 
@@ -1854,6 +1857,11 @@ memory_status_init(void) {
     STATUS_INIT(MEMORY_MAX_IN_USE,         MEM_ESTIMATED_MAXIMUM_MEMORY_FOOTPRINT, UINT64,  "estimated maximum memory footprint", TOKU_ENGINE_STATUS|TOKU_GLOBAL_STATUS);
     STATUS_INIT(MEMORY_MALLOCATOR_VERSION, nullptr, CHARSTR, "mallocator version", TOKU_ENGINE_STATUS);
     STATUS_INIT(MEMORY_MMAP_THRESHOLD,     nullptr, UINT64,  "mmap threshold", TOKU_ENGINE_STATUS);
+
+    STATUS_INIT(MEMORY_FREE_MICROS,         nullptr, UINT64,  "time to execute free in micros", TOKU_ENGINE_STATUS);
+    STATUS_INIT(MEMORY_LONG_FREE_COUNT,     nullptr, UINT64,  "number of long free calls", TOKU_ENGINE_STATUS);
+    STATUS_INIT(MEMORY_LONG_FREE_MICROS,    nullptr, UINT64,  "time to execute long free calls in micros", TOKU_ENGINE_STATUS);
+
     memory_status.initialized = true;  
 }
 #undef STATUS_INIT
@@ -1877,6 +1885,9 @@ memory_get_status(void) {
     MEMORY_STATUS_VALUE(MEMORY_MAX_IN_USE) = local_memstat.max_in_use;
     MEMORY_STATUS_VALUE(MEMORY_MMAP_THRESHOLD) = local_memstat.mmap_threshold;
     memory_status.status[MEMORY_MALLOCATOR_VERSION].value.str = local_memstat.mallocator_version;
+    MEMORY_STATUS_VALUE(MEMORY_FREE_MICROS) = local_memstat.free_micros;
+    MEMORY_STATUS_VALUE(MEMORY_LONG_FREE_COUNT) = local_memstat.long_free_count;
+    MEMORY_STATUS_VALUE(MEMORY_LONG_FREE_MICROS) = local_memstat.long_free_micros;
 }
 #undef MEMORY_STATUS_VALUE
 

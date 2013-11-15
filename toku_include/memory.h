@@ -218,6 +218,9 @@ typedef struct memory_status {
     volatile uint64_t max_in_use;      // maximum memory footprint (used - freed), approximate (not worth threadsafety overhead for exact)
     const char *mallocator_version;
     uint64_t mmap_threshold;
+    uint64_t free_micros;
+    uint64_t long_free_count;
+    uint64_t long_free_micros;
 } LOCAL_MEMORY_STATUS_S, *LOCAL_MEMORY_STATUS;
 
 void toku_memory_get_status(LOCAL_MEMORY_STATUS s);
