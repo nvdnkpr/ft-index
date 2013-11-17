@@ -118,6 +118,7 @@ static realloc_fun_t t_xrealloc = 0;
 static LOCAL_MEMORY_STATUS_S status;
 int toku_memory_do_stats = 0;
 int toku_memory_debug = 1;
+uint64_t toku_memory_long_threshold = 100000; // 100 milliseconds
 
 static bool memory_startup_complete;
 
@@ -333,7 +334,7 @@ toku_free(void *p) {
                 uint64_t tdelta = tend - tstart;
                 toku_sync_add_and_fetch(&status.free_count, 1);
                 toku_sync_add_and_fetch(&status.free_micros, tdelta);
-                if (tdelta > 1000000) {
+                if (tdelta > toku_memory_long_threshold) {
                     toku_sync_add_and_fetch(&status.long_free_count, 1);
                     toku_sync_add_and_fetch(&status.long_free_micros, tdelta);
                 }
