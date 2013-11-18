@@ -373,6 +373,7 @@ toku_checkpoint(CHECKPOINTER cp, TOKULOGGER logger,
     STATUS_VALUE(CP_FOOTPRINT) = 0;
 
     checkpoint_safe_checkpoint_unlock();
+    usleep(100000);
     return 0;
 }
 
