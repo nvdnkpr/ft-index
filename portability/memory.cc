@@ -105,6 +105,7 @@ PATENT RIGHTS GRANT:
 #include "toku_assert.h"
 #include <portability/toku_atomic.h>
 #include <toku_time.h>
+#include <sys/resource.h>
 
 static malloc_fun_t  t_malloc  = 0;
 static malloc_aligned_fun_t t_malloc_aligned = 0;
@@ -332,6 +333,9 @@ toku_free(void *p) {
             toku_sync_add_and_fetch(&status.freed, used);
         }
         if (toku_memory_debug) {
+            struct rusage rstart;
+            int r = getrusage(RUSAGE_THREAD, &rstart);
+            assert_zero(r);
             uint64_t tstart = toku_current_time_microsec();
             if (t_free)
                 t_free(p);
@@ -345,7 +349,12 @@ toku_free(void *p) {
                 if (tdelta > toku_memory_long_threshold) {
                     toku_sync_add_and_fetch(&status.long_free_count, 1);
                     toku_sync_add_and_fetch(&status.long_free_micros, tdelta);
-                    fprintf(stderr, "%s %" PRIu64 "\n", __FUNCTION__, tdelta);
+                    struct rusage rend;
+                    r = getrusage(RUSAGE_THREAD, &rend);
+                    assert_zero(r);
+                    tstart = rstart.ru_utime.tv_sec * 1000000 + rstart.ru_utime.tv_usec + rstart.ru_stime.tv_sec * 1000000 + rstart.ru_stime.tv_usec;
+                    tend = rend.ru_utime.tv_sec * 1000000 + rend.ru_utime.tv_usec + rend.ru_stime.tv_sec * 1000000 + rend.ru_stime.tv_usec;
+                    fprintf(stderr, "%s %" PRIu64 " %" PRIu64 "\n", __FUNCTION__, tdelta, tend - tstart);
                     toku_backtrace();
                 }
             }
