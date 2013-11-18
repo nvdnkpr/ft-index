@@ -118,7 +118,15 @@ static realloc_fun_t t_xrealloc = 0;
 static LOCAL_MEMORY_STATUS_S status;
 int toku_memory_do_stats = 0;
 int toku_memory_debug = 1;
-uint64_t toku_memory_long_threshold = 100000; // 100 milliseconds
+uint64_t toku_memory_long_threshold = 1000000;
+
+#include <execinfo.h>
+static void toku_backtrace(void) {
+    const int N_POINTERS = 30;
+    void *backtrace_pointers[N_POINTERS];
+    int n = backtrace(backtrace_pointers, N_POINTERS);
+    backtrace_symbols_fd(backtrace_pointers, n, fileno(stderr));
+}
 
 static bool memory_startup_complete;
 
@@ -337,6 +345,8 @@ toku_free(void *p) {
                 if (tdelta > toku_memory_long_threshold) {
                     toku_sync_add_and_fetch(&status.long_free_count, 1);
                     toku_sync_add_and_fetch(&status.long_free_micros, tdelta);
+                    fprintf(stderr, "%s %" PRIu64 "\n", __FUNCTION__, tdelta);
+                    toku_backtrace();
                 }
             }
         } else {
