@@ -101,7 +101,7 @@ void lock_request_unit_test::test_start_pending(void) {
     locktree *lt;
     lock_request request;
 
-    mgr.create(nullptr, nullptr, nullptr, nullptr);
+    mgr.create(nullptr, nullptr, nullptr, nullptr, nullptr);
     DICTIONARY_ID dict_id = { 1 };
     lt = mgr.get_lt(dict_id, nullptr, compare_dbts, nullptr);
 

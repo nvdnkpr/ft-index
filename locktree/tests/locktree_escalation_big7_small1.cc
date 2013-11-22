@@ -122,7 +122,7 @@ static locktree **big_txn_lt;
 static int n_big_txn_lt;
 
 static int get_locktrees_touched_by_txn(TXNID txn_id UU(), void *txn_extra UU(), locktree ***ret_locktrees, int *ret_num_locktrees) {
-    locktree **locktrees = new locktree *[n_big_txn_lt];
+    locktree **locktrees = (locktree **) toku_malloc(n_big_txn_lt * sizeof (locktree *));
     for (int i = 0; i < n_big_txn_lt; i++)
         locktrees[i] = big_txn_lt[i];
     *ret_locktrees = locktrees;
@@ -160,6 +160,7 @@ struct big_arg {
 
 static void *big_f(void *_arg) {
     struct big_arg *arg = (struct big_arg *) _arg;
+    printf("%u %s\n", toku_os_gettid(), __FUNCTION__);
     run_big_txn(arg->mgr, arg->lt, arg->n_lt, arg->txn_id);
     return arg;
 }
@@ -188,6 +189,7 @@ struct small_arg {
 
 static void *small_f(void *_arg) {
     struct small_arg *arg = (struct small_arg *) _arg;
+    printf("%u %s\n", toku_os_gettid(), __FUNCTION__);
     run_small_txn(arg->mgr, arg->lt, arg->txn_id, arg->k);
     return arg;
 }
@@ -245,10 +247,9 @@ int main(int argc, const char *argv[]) {
 
     // create a manager
     locktree::manager mgr;
-    mgr.create(nullptr, nullptr, e_callback, nullptr);
+    mgr.create(nullptr, nullptr, e_callback, nullptr, get_locktrees_touched_by_txn);
     mgr.set_max_lock_memory(max_lock_memory);
     mgr.set_escalator_verbose(verbose != 0);
-    mgr.set_get_locktrees_touched_by_txn(get_locktrees_touched_by_txn);
 
     // create lock trees
     uint64_t next_dict_id = 1;

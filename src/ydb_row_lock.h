@@ -114,4 +114,6 @@ void toku_db_grab_write_lock(DB *db, DBT *key, TOKUTXN tokutxn);
 
 void toku_db_release_lt_key_ranges(DB_TXN *txn, txn_lt_key_ranges *ranges);
 
+int toku_get_locktrees_callback(TXNID txnid, void *txn_extra, toku::locktree ***locktrees, int *num_locktrees);
+
 #endif /* TOKU_YDB_ROW_LOCK_H */

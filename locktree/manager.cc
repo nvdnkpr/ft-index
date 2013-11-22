@@ -100,7 +100,7 @@ PATENT RIGHTS GRANT:
 
 namespace toku {
 
-void locktree::manager::create(lt_create_cb create_cb, lt_destroy_cb destroy_cb, lt_escalate_cb escalate_cb, void *escalate_extra) {
+void locktree::manager::create(lt_create_cb create_cb, lt_destroy_cb destroy_cb, lt_escalate_cb escalate_cb, void *escalate_extra, lt_get_locktrees_cb get_locktrees_cb) {
     m_max_lock_memory = DEFAULT_MAX_LOCK_MEMORY;
     m_current_lock_memory = 0;
     m_lock_wait_time_ms = DEFAULT_LOCK_WAIT_TIME;
@@ -110,6 +110,7 @@ void locktree::manager::create(lt_create_cb create_cb, lt_destroy_cb destroy_cb,
     m_lt_destroy_callback = destroy_cb;
     m_lt_escalate_callback = escalate_cb;
     m_lt_escalate_callback_extra = escalate_extra;
+    m_get_locktrees_callback = get_locktrees_cb;
 
     ZERO_STRUCT(m_mutex);
     toku_mutex_init(&m_mutex, nullptr);
@@ -121,7 +122,6 @@ void locktree::manager::create(lt_create_cb create_cb, lt_destroy_cb destroy_cb,
     toku_mutex_init(&m_escalation_stats.m_escalation_mutex, nullptr);
     m_escalator.create();
     m_escalator_verbose = 0;
-    m_get_locktrees_touched_by_txn = nullptr;
 }
 
 void locktree::manager::destroy(void) {
@@ -131,10 +131,6 @@ void locktree::manager::destroy(void) {
     invariant(m_locktree_map.size() == 0);
     m_locktree_map.destroy();
     toku_mutex_destroy(&m_mutex);
-}
-
-void locktree::manager::set_get_locktrees_touched_by_txn(int (*get_locktrees_touched_by_txn)(TXNID, void *, locktree ***, int *)) {
-    m_get_locktrees_touched_by_txn = get_locktrees_touched_by_txn;
 }
 
 void locktree::manager::mutex_lock(void) {
@@ -383,6 +379,20 @@ static uint64_t sum_used_memory(locktree **locktrees, int num_locktrees) {
     return s;
 }
 
+#if !TOKU_LOCKTREE_ESCALATOR_LAMBDA
+struct escalate_args {
+    locktree::manager *mgr;
+    locktree **locktrees;
+    int num_locktrees;
+};
+
+static void manager_escalate_locktrees(void *extra) {
+    escalate_args *args = (escalate_args *) extra;
+    args->mgr->escalate_locktrees(args->locktrees, args->num_locktrees);
+}
+
+#endif
+
 int locktree::manager::check_current_lock_constraints(TXNID txn_id, void *txn_extra, bool big_txn) {
     int r = 0;
 
@@ -390,7 +400,7 @@ int locktree::manager::check_current_lock_constraints(TXNID txn_id, void *txn_ex
     if (m_current_lock_memory > half_limit && big_txn) {
         locktree **locktrees = nullptr;
         int num_locktrees = 0;
-        if (m_get_locktrees_touched_by_txn && m_get_locktrees_touched_by_txn(txn_id, txn_extra, &locktrees, &num_locktrees) == 0) {
+        if (m_get_locktrees_callback && m_get_locktrees_callback(txn_id, txn_extra, &locktrees, &num_locktrees) == 0) {
             if (sum_used_memory(locktrees, num_locktrees) > half_limit) {
 
                 // sort locktrees from largest to smallest
@@ -401,14 +411,15 @@ int locktree::manager::check_current_lock_constraints(TXNID txn_id, void *txn_ex
 #if TOKU_LOCKTREE_ESCALATOR_LAMBDA
                 this_escalator.run(this, [this,locktrees,num_locktrees] () -> void { escalate_locktrees(locktrees, num_locktrees); });
 #else
-#error
+                escalate_args args = { this, locktrees, num_locktrees };
+                this_escalator.run(this, manager_escalate_locktrees, &args);
 #endif
                 this_escalator.destroy();
                 if (sum_used_memory(locktrees, num_locktrees) > half_limit) {
                     r = TOKUDB_OUT_OF_LOCKS;
                 }
             }
-            delete [] locktrees;
+            toku_free(locktrees);
         }
     }
 
@@ -495,7 +506,7 @@ void locktree::manager::escalate_locktrees(locktree **locktrees, int num_locktre
     tokutime_t t0 = toku_time_now();
     for (int i = 0; i < num_locktrees; i++) {
         locktrees[i]->escalate(m_lt_escalate_callback, m_lt_escalate_callback_extra);
-        if (4 * m_current_lock_memory < 3 * m_max_lock_memory) { // current < 3/4 max
+        if (2 * m_current_lock_memory < m_max_lock_memory) { // current < 1/2 max
             break;
         }
     }

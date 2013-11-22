@@ -106,7 +106,7 @@ void lock_request_unit_test::test_wait_time_callback(void) {
     locktree::manager mgr;
     locktree *lt;
 
-    mgr.create(nullptr, nullptr, nullptr, nullptr);
+    mgr.create(nullptr, nullptr, nullptr, nullptr, nullptr);
     mgr.set_lock_wait_time(10*1000, my_lock_wait_time_callback);
     DICTIONARY_ID dict_id = { 1 };
     lt = mgr.get_lt(dict_id, nullptr, compare_dbts, nullptr);

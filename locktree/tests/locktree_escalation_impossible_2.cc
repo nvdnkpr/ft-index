@@ -209,7 +209,7 @@ int main(int argc, const char *argv[]) {
 
     // create a manager
     locktree::manager mgr;
-    mgr.create(nullptr, nullptr, e_callback, nullptr);
+    mgr.create(nullptr, nullptr, e_callback, nullptr, nullptr);
     mgr.set_max_lock_memory(max_lock_memory);
     mgr.set_escalator_verbose(verbose != 0);
 

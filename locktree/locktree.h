@@ -92,7 +92,7 @@ PATENT RIGHTS GRANT:
 #ifndef TOKU_LOCKTREE_H
 #define TOKU_LOCKTREE_H
 
-#define TOKU_LOCKTREE_ESCALATOR_LAMBDA 1
+#define TOKU_LOCKTREE_ESCALATOR_LAMBDA 0
 #if TOKU_LOCKTREE_ESCALATOR_LAMBDA
 #include <functional>
 #endif
@@ -257,10 +257,11 @@ public:
         typedef int  (*lt_create_cb)(locktree *lt, void *extra);
         typedef void (*lt_destroy_cb)(locktree *lt);
         typedef void (*lt_escalate_cb)(TXNID txnid, locktree *lt, const range_buffer &buffer, void *extra);
+        typedef int  (*lt_get_locktrees_cb)(TXNID, void *txn_extra, locktree ***locktrees_ret, int *num_locktrees_ret);
 
         // note: create_cb is called just after a locktree is first created.
         //       destroy_cb is called just before a locktree is destroyed.
-        void create(lt_create_cb create_cb, lt_destroy_cb destroy_cb, lt_escalate_cb, void *extra);
+        void create(lt_create_cb create_cb, lt_destroy_cb destroy_cb, lt_escalate_cb, void *escalate_extra, lt_get_locktrees_cb);
 
         void destroy(void);
 
@@ -271,8 +272,6 @@ public:
         uint64_t get_lock_wait_time(void);
 
         void set_lock_wait_time(uint64_t lock_wait_time, uint64_t (*get_lock_wait_time_cb)(uint64_t default_lock_wait_time));
-
-        void set_get_locktrees_touched_by_txn(int (*get_locktrees_touched_by_txn)(TXNID, void *, locktree***, int*));
 
         // effect: Get a locktree from the manager. If a locktree exists with the given
         //         dict_id, it is referenced and then returned. If one did not exist, it
@@ -353,6 +352,7 @@ public:
         lt_destroy_cb m_lt_destroy_callback;
         lt_escalate_cb m_lt_escalate_callback;
         void *m_lt_escalate_callback_extra;
+        lt_get_locktrees_cb m_get_locktrees_callback;
 
         LTM_STATUS_S status;
 
@@ -395,8 +395,6 @@ public:
 
         escalator m_escalator;
         bool m_escalator_verbose;
-
-        int (*m_get_locktrees_touched_by_txn)(TXNID, void *, locktree ***, int *);
 
         friend class manager_unit_test;
     };

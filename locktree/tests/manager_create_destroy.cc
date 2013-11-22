@@ -102,7 +102,7 @@ void manager_unit_test::test_create_destroy(void) {
     locktree::manager::lt_escalate_cb escalate_callback =
         (locktree::manager::lt_escalate_cb) (long) 3;
     void *extra = (void *) (long) 4;
-    mgr.create(create_callback, destroy_callback, escalate_callback, extra);
+    mgr.create(create_callback, destroy_callback, escalate_callback, extra, nullptr);
 
     invariant(mgr.m_max_lock_memory == locktree::manager::DEFAULT_MAX_LOCK_MEMORY);
     invariant(mgr.m_current_lock_memory == 0);

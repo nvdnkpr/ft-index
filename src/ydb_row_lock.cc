@@ -322,3 +322,34 @@ void toku_db_release_lt_key_ranges(DB_TXN *txn, txn_lt_key_ranges *ranges) {
     toku::locktree::manager *ltm = &txn->mgrp->i->ltm;
     ltm->release_lt(lt);
 }
+
+static int toku_get_locktrees_touched_by_txn(DB_TXN *txn, toku::locktree ***locktrees_ret, int *num_locktrees_ret) {
+    int r;
+    toku_mutex_lock(&db_txn_struct_i(txn)->txn_mutex);
+    toku::omt<txn_lt_key_ranges> *map = &db_txn_struct_i(txn)->lt_map;
+    int num_locktrees = map->size();
+    toku::locktree **locktrees = (toku::locktree **) toku_malloc(num_locktrees * sizeof (toku::locktree *)); 
+    if (locktrees == nullptr) {
+        r = ENOMEM;
+    } else {
+        for (int i = 0; i < num_locktrees; i++) {
+            // fetch the range
+            txn_lt_key_ranges range;
+            r = map->fetch(i, &range);
+            assert_zero(r);
+            // add the lt to the set of locktrees
+            locktrees[i] = range.lt;
+        }
+        r = 0;
+    }
+    toku_mutex_unlock(&db_txn_struct_i(txn)->txn_mutex);
+    *locktrees_ret = locktrees;
+    *num_locktrees_ret = num_locktrees;
+    return r;
+}
+
+
+int toku_get_locktrees_callback(TXNID txnid UU(), void *txn_extra, toku::locktree ***locktrees_ret, int *num_locktrees_ret) {
+    DB_TXN *txn = (DB_TXN *) txn_extra;
+    return toku_get_locktrees_touched_by_txn(txn, locktrees_ret, num_locktrees_ret);
+}
