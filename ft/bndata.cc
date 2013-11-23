@@ -152,6 +152,7 @@ void bn_data::initialize_from_separate_keys_and_vals(uint32_t num_entries, struc
 
 void bn_data::prepare_to_serialize(void) {
     if (m_buffer.is_value_length_fixed()) {
+        m_buffer.prepare_for_serialize();
         omt_compress_kvspace(0, nullptr);  // Gets it ready for easy serialization.
     }
 }

@@ -381,7 +381,7 @@ test_serialize_nonleaf(int valsize, int nelts, double entropy, int ser_runs, int
     double dt;
     dt = (t[1].tv_sec - t[0].tv_sec) + ((t[1].tv_usec - t[0].tv_usec) / USECS_PER_SEC);
     dt *= 1000;
-    printf("serialize nonleaf(ms):   %0.05lf\n (IGNORED RUNS=%d)", dt, ser_runs);
+    printf("serialize nonleaf(ms):   %0.05lf (IGNORED RUNS=%d)\n", dt, ser_runs);
 
     struct ftnode_fetch_extra bfe;
     fill_bfe_for_full_read(&bfe, brt_h);
@@ -392,7 +392,7 @@ test_serialize_nonleaf(int valsize, int nelts, double entropy, int ser_runs, int
     gettimeofday(&t[1], NULL);
     dt = (t[1].tv_sec - t[0].tv_sec) + ((t[1].tv_usec - t[0].tv_usec) / USECS_PER_SEC);
     dt *= 1000;
-    printf("deserialize nonleaf(ms): %0.05lf\n", dt);
+    printf("deserialize nonleaf(ms): %0.05lf (IGNORED RUNS=%d)\n", dt, deser_runs);
     printf("io time(ms) %lf decompress time(ms) %lf deserialize time(ms) %lf (IGNORED RUNS=%d)\n",
            tokutime_to_seconds(bfe.io_time)*1000,
            tokutime_to_seconds(bfe.decompress_time)*1000,
@@ -424,23 +424,27 @@ test_serialize_nonleaf(int valsize, int nelts, double entropy, int ser_runs, int
 
 int
 test_main (int argc __attribute__((__unused__)), const char *argv[] __attribute__((__unused__))) {
-    long valsize, nelts, ser_runs, deser_runs;
+    const int DEFAULT_RUNS = 5;
+    long valsize, nelts, ser_runs = DEFAULT_RUNS, deser_runs = DEFAULT_RUNS;
     double entropy = 0.3;
 
-    if (argc != 5) {
-        fprintf(stderr, "Usage: %s <valsize> <nelts> <serialize_runs> <deserialize_runs>\n", argv[0]);
+    if (argc != 3 && argc != 5) {
+        fprintf(stderr, "Usage: %s <valsize> <nelts> [<serialize_runs> <deserialize_runs>]\n", argv[0]);
+        fprintf(stderr, "Default (and min) runs is %d\n", DEFAULT_RUNS);
         return 2;
     }
     valsize = strtol(argv[1], NULL, 0);
     nelts = strtol(argv[2], NULL, 0);
-    ser_runs = strtol(argv[3], NULL, 0);
-    deser_runs = strtol(argv[4], NULL, 0);
+    if (argc == 5) {
+        ser_runs = strtol(argv[3], NULL, 0);
+        deser_runs = strtol(argv[4], NULL, 0);
+    }
 
     if (ser_runs <= 0) {
-        ser_runs = 10;
+        ser_runs = DEFAULT_RUNS;
     }
     if (deser_runs <= 0) {
-        deser_runs = 10;
+        deser_runs = DEFAULT_RUNS;
     }
 
     initialize_dummymsn();

@@ -374,6 +374,51 @@ void dmt<dmtdata_t, dmtdataout_t>::convert_to_dtree(void) {
 }
 
 template<typename dmtdata_t, typename dmtdataout_t>
+void dmt<dmtdata_t, dmtdataout_t>::prepare_for_serialize(void) {
+    if (!this->is_array) {
+        this->convert_from_tree_to_array<true>();
+    }
+}
+
+template<typename dmtdata_t, typename dmtdataout_t>
+template<bool with_sizes>
+void dmt<dmtdata_t, dmtdataout_t>::convert_from_tree_to_array(void) {
+    static_assert(with_sizes, "not in prototype");
+    paranoid_invariant(!this->is_array);
+    paranoid_invariant(this->values_same_size);
+    
+    const uint32_t num_values = this->size();
+
+    node_idx *tmp_array;
+    bool malloced = false;
+    tmp_array = alloc_temp_node_idxs(num_values);
+    if (!tmp_array) {
+        malloced = true;
+        XMALLOC_N(num_values, tmp_array);
+    }
+    this->fill_array_with_subtree_idxs(tmp_array, this->d.t.root);
+
+    struct mempool new_mp = this->mp;
+    const uint32_t fixed_len = this->value_length;
+    const uint32_t fixed_aligned_len = align(this->value_length);
+    size_t mem_needed = num_values * fixed_aligned_len;
+    toku_mempool_construct(&new_mp, mem_needed);
+    uint8_t* CAST_FROM_VOIDP(dest, toku_mempool_malloc(&new_mp, mem_needed, 1));
+    paranoid_invariant_notnull(dest);
+    for (uint32_t i = 0; i < num_values; i++) {
+        const dmt_dnode &n = get_node<dmt_dnode>(tmp_array[i]);
+        memcpy(&dest[i*fixed_aligned_len], &n.value, fixed_len);
+    }
+    toku_mempool_destroy(&this->mp);
+    this->mp = new_mp;
+    this->is_array = true;
+    this->d.a.start_idx = 0;
+    this->d.a.num_values = num_values;
+
+    if (malloced) toku_free(tmp_array);
+}
+
+template<typename dmtdata_t, typename dmtdataout_t>
 template<bool with_sizes>
 void dmt<dmtdata_t, dmtdataout_t>::convert_from_array_to_tree(void) {
     paranoid_invariant(this->is_array);
@@ -1133,18 +1178,20 @@ template<typename dmtdata_t, typename dmtdataout_t>
 const struct mempool * dmt<dmtdata_t, dmtdataout_t>::serialize_values(uint32_t expected_unpadded_memory, struct wbuf *wb) const {
     invariant(this->is_array);
     const uint8_t pad_bytes = get_fixed_length_alignment_overhead();
-    paranoid_invariant(toku_mempool_get_used_space(&this->mp) ==
-                       expected_unpadded_memory + pad_bytes * this->d.a.num_values);
+    const uint32_t fixed_len = this->value_length;
+    const uint32_t fixed_aligned_len = align(this->value_length);
     paranoid_invariant(expected_unpadded_memory == this->d.a.num_values * this->value_length);
-    paranoid_invariant(toku_mempool_get_frag_size(&this->mp) == 0);
-    if (pad_bytes == 0) {
+    paranoid_invariant(toku_mempool_get_used_space(&this->mp) >=
+                       expected_unpadded_memory + pad_bytes * this->d.a.num_values +
+                       this->d.a.start_idx * fixed_aligned_len);
+    if (this->d.a.num_values == 0) {
+        // Nothing to serialize
+    } else if (pad_bytes == 0) {
         // Basically a memcpy
-        wbuf_nocrc_literal_bytes(wb, toku_mempool_get_base(&this->mp), expected_unpadded_memory);
+        wbuf_nocrc_literal_bytes(wb, get_array_value(0), expected_unpadded_memory);
     } else {
         uint8_t* dest = wbuf_nocrc_reserve_literal_bytes(wb, expected_unpadded_memory);
-        uint8_t* CAST_FROM_VOIDP(src, toku_mempool_get_base(&this->mp));
-        const uint32_t fixed_len = this->value_length;
-        const uint32_t fixed_aligned_len = align(this->value_length);
+        uint8_t* src = reinterpret_cast<uint8_t*>(get_array_value(0));
         paranoid_invariant(this->d.a.num_values*fixed_len == expected_unpadded_memory);
         for (uint32_t i = 0; i < this->d.a.num_values; i++) {
             memcpy(&dest[i*fixed_len], &src[i*fixed_aligned_len], fixed_len);

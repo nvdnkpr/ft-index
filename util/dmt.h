@@ -550,8 +550,9 @@ public:
 
     bool is_value_length_fixed(void) const;
 
-
     uint32_t get_fixed_length(void) const;
+
+    void prepare_for_serialize(void);
 
 private:
     static_assert(sizeof(dmt_dnode) - sizeof(dmtdata_t) == __builtin_offsetof(dmt_dnode, value), "value is not last field in node");
@@ -626,6 +627,9 @@ private:
 
     template<bool with_sizes>
     void convert_from_array_to_tree(void);
+
+    template<bool with_sizes>
+    void convert_from_tree_to_array(void);
 
     __attribute__((nonnull(2,5)))
     void delete_internal(subtree *const subtreep, const uint32_t idx, subtree *const subtree_replace, subtree **const rebalance_subtree);
