@@ -119,19 +119,21 @@ void dmt<dmtdata_t, dmtdataout_t>::create_from_sorted_memory_of_fixed_size_eleme
     const uint8_t pad_bytes = get_fixed_length_alignment_overhead();
     uint32_t aligned_memsize = mem_length + numvalues * pad_bytes;
     toku_mempool_construct(&this->mp, aligned_memsize);
-    void *ptr = toku_mempool_malloc(&this->mp, aligned_memsize, 1);
-    paranoid_invariant_notnull(ptr);
-    uint8_t *CAST_FROM_VOIDP(dest, ptr);
-    const uint8_t *CAST_FROM_VOIDP(src, mem);
-    if (pad_bytes == 0) {
-        paranoid_invariant(aligned_memsize == mem_length);
-        memcpy(dest, src, aligned_memsize);
-    } else {
-        const uint32_t fixed_len = this->value_length;
-        const uint32_t fixed_aligned_len = align(this->value_length);
-        paranoid_invariant(this->d.a.num_values*fixed_len == mem_length);
-        for (uint32_t i = 0; i < this->d.a.num_values; i++) {
-            memcpy(&dest[i*fixed_aligned_len], &src[i*fixed_len], fixed_len);
+    if (aligned_memsize > 0) {
+        void *ptr = toku_mempool_malloc(&this->mp, aligned_memsize, 1);
+        paranoid_invariant_notnull(ptr);
+        uint8_t *CAST_FROM_VOIDP(dest, ptr);
+        const uint8_t *CAST_FROM_VOIDP(src, mem);
+        if (pad_bytes == 0) {
+            paranoid_invariant(aligned_memsize == mem_length);
+            memcpy(dest, src, aligned_memsize);
+        } else {
+            const uint32_t fixed_len = this->value_length;
+            const uint32_t fixed_aligned_len = align(this->value_length);
+            paranoid_invariant(this->d.a.num_values*fixed_len == mem_length);
+            for (uint32_t i = 0; i < this->d.a.num_values; i++) {
+                memcpy(&dest[i*fixed_aligned_len], &src[i*fixed_len], fixed_len);
+            }
         }
     }
 }
