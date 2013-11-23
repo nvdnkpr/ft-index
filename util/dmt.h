@@ -555,6 +555,8 @@ public:
     uint32_t get_fixed_length(void) const;
 
     const struct mempool * get_memory_for_serialization(void) const;
+
+    void zero_all_alignment_bytes(void);
 private:
     static_assert(sizeof(dmt_dnode) - sizeof(dmtdata_t) == __builtin_offsetof(dmt_dnode, value), "value is not last field in node");
     static_assert(4 * sizeof(uint32_t) == __builtin_offsetof(dmt_dnode, value), "dmt_node is padded");

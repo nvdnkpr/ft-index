@@ -1122,6 +1122,22 @@ const struct mempool * dmt<dmtdata_t, dmtdataout_t>::get_memory_for_serializatio
 }
 
 template<typename dmtdata_t, typename dmtdataout_t>
+void dmt<dmtdata_t, dmtdataout_t>::zero_all_alignment_bytes(void) {
+    invariant(this->values_same_size);
+    invariant(toku_mempool_get_frag_size(&this->mp) == 0);
+    const uint8_t pad_bytes = get_fixed_length_alignment_overhead();
+    if (pad_bytes > 0) {
+        char * CAST_FROM_VOIDP(ptr, toku_mempool_get_base(&this->mp));
+        for (uint32_t i = 0; i < this->d.a.num_values; i++) {
+            ptr += this->value_length;
+            memset(ptr, 0, pad_bytes);
+            ptr += pad_bytes;
+        }
+        invariant(toku_mempool_get_next_free_ptr(&this->mp) == ptr);
+    }
+}
+
+template<typename dmtdata_t, typename dmtdataout_t>
 void dmt<dmtdata_t, dmtdataout_t>::builder::create(uint32_t _max_values, uint32_t _max_value_bytes) {
     this->max_values = _max_values;
     this->max_value_bytes = _max_value_bytes;
