@@ -136,9 +136,11 @@ void bn_data::initialize_from_separate_keys_and_vals(uint32_t num_entries, struc
     bytevec vals_src;
     rbuf_literal_bytes(rb, &vals_src, val_data_size);
 
-    void *vals_dest = toku_mempool_malloc(&this->m_buffer_mempool, val_data_size, 1);
-    paranoid_invariant_notnull(vals_dest);
-    memcpy(vals_dest, vals_src, val_data_size);
+    if (num_entries > 0) {
+        void *vals_dest = toku_mempool_malloc(&this->m_buffer_mempool, val_data_size, 1);
+        paranoid_invariant_notnull(vals_dest);
+        memcpy(vals_dest, vals_src, val_data_size);
+    }
 
     add_keys(num_entries, num_entries * fixed_key_length);
 
