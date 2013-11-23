@@ -376,10 +376,15 @@ serialize_ftnode_partition(FTNODE node, int i, struct sub_block *sb) {
         wbuf_nocrc_char(&wb, ch);
         wbuf_nocrc_uint(&wb, bd->omt_size());
 
-        //
-        // iterate over leafentries and place them into the buffer
-        //
-        bd->omt_iterate<struct wbuf, wbufwriteleafentry>(&wb);
+        bd->serialize_header(&wb);
+        if (bd->need_to_serialize_each_leafentry_with_key()) {
+            //
+            // iterate over leafentries and place them into the buffer
+            //
+            bd->omt_iterate<struct wbuf, wbufwriteleafentry>(&wb);
+        } else {
+            bd->serialize_rest(&wb);
+        }
     }
     uint32_t end_to_end_checksum = x1764_memory(sb->uncompressed_ptr, wbuf_get_woffset(&wb));
     wbuf_nocrc_int(&wb, end_to_end_checksum);
@@ -1546,10 +1551,9 @@ deserialize_ftnode_partition(
         uint32_t num_entries = rbuf_int(&rb);
         // we are now at the first byte of first leafentry
         data_size -= rb.ndone; // remaining bytes of leafentry data
-        
+
         BASEMENTNODE bn = BLB(node, childnum);
-        bn->data_buffer.initialize_from_data(num_entries, &rb.buf[rb.ndone], data_size);
-        rb.ndone += data_size;
+        bn->data_buffer.initialize_from_data(num_entries, &rb, data_size, node->layout_version_read_from_disk);
     }
     assert(rb.ndone == rb.size);
     toku_free(sb->uncompressed_ptr);
@@ -2100,8 +2104,7 @@ deserialize_and_upgrade_leaf_node(FTNODE node,
         if (has_end_to_end_checksum) {
             data_size -= sizeof(uint32_t);
         }
-        bn->data_buffer.initialize_from_data(n_in_buf, &rb->buf[rb->ndone], data_size);
-        rb->ndone += data_size;
+        bn->data_buffer.initialize_from_data(n_in_buf, rb, data_size, node->layout_version_read_from_disk);
     }
 
     // Whatever this is must be less than the MSNs of every message above

@@ -104,6 +104,27 @@ void dmt<dmtdata_t, dmtdataout_t>::create(void) {
 }
 
 template<typename dmtdata_t, typename dmtdataout_t>
+void dmt<dmtdata_t, dmtdataout_t>::create_from_sorted_aligned_memory_of_fixed_size_elements(
+        const void *mem,
+        const uint32_t numvalues,
+        const uint32_t mem_length,
+        const uint32_t fixed_value_length,
+        const uint8_t mem_alignment) {
+    invariant(ALIGNMENT == mem_alignment);  //Alternative not yet supported.
+    invariant(align(mem_length) == mem_length);
+    this->create_internal_no_alloc(false);
+    this->values_same_size = true;
+    this->value_length = fixed_value_length;
+    this->is_array = true;
+    this->d.a.start_idx = 0;
+    this->d.a.num_values = numvalues;
+    toku_mempool_construct(&this->mp, mem_length);
+    void *dest = toku_mempool_malloc(&this->mp, align(mem_length), 1);
+    paranoid_invariant_notnull(dest);
+    memcpy(dest, mem, mem_length);
+}
+
+template<typename dmtdata_t, typename dmtdataout_t>
 void dmt<dmtdata_t, dmtdataout_t>::create_no_array(void) {
     this->create_internal_no_alloc(false);
 }
@@ -1081,6 +1102,26 @@ int dmt<dmtdata_t, dmtdataout_t>::find_internal_minus(const subtree &subtree, co
 }
 
 template<typename dmtdata_t, typename dmtdataout_t>
+uint32_t dmt<dmtdata_t, dmtdataout_t>::get_fixed_length(void) const {
+    return this->values_same_size ? this->value_length : 0;
+}
+
+template<typename dmtdata_t, typename dmtdataout_t>
+uint32_t dmt<dmtdata_t, dmtdataout_t>::get_fixed_length_alignment_overhead(void) const {
+    return this->values_same_size ? align(this->value_length) - this->value_length : 0;
+}
+
+template<typename dmtdata_t, typename dmtdataout_t>
+bool dmt<dmtdata_t, dmtdataout_t>::is_value_length_fixed(void) const {
+    return this->values_same_size;
+}
+
+template<typename dmtdata_t, typename dmtdataout_t>
+const struct mempool * dmt<dmtdata_t, dmtdataout_t>::get_memory_for_serialization(void) const {
+    return &this->mp;
+}
+
+template<typename dmtdata_t, typename dmtdataout_t>
 void dmt<dmtdata_t, dmtdataout_t>::builder::create(uint32_t _max_values, uint32_t _max_value_bytes) {
     this->max_values = _max_values;
     this->max_value_bytes = _max_value_bytes;
@@ -1148,9 +1189,9 @@ void dmt<dmtdata_t, dmtdataout_t>::builder::build_and_destroy(dmt<dmtdata_t, dmt
     }
     paranoid_invariant_null(this->sorted_nodes);
 
-    size_t max_allowed = toku_mempool_get_used_space(&this->temp.mp);
-    max_allowed += max_allowed / 4;
+    size_t used = toku_mempool_get_used_space(&this->temp.mp);
     size_t allocated = toku_mempool_get_size(&this->temp.mp);
+    size_t max_allowed = used + used / 4;
     size_t footprint = toku_mempool_footprint(&this->temp.mp);
     if (allocated > max_allowed && footprint > max_allowed) {
         // Reallocate smaller mempool to save memory

@@ -232,7 +232,7 @@ private:
     typedef dmt_functor<dmtdata_t> dmtdatain_t;
 
 public:
-    static const uint32_t ALIGNMENT = 4;
+    static const uint8_t ALIGNMENT = 4;
 
     class builder {
     public:
@@ -263,34 +263,18 @@ public:
 
     /**
      * Effect: Create a DMT containing values.  The number of values is in numvalues.
-     *  Stores the new DMT in *dmtp.
      * Requires: this has not been created yet
-     * Requires: values != NULL
-     * Requires: values is sorted
-     * Performance:  time=O(numvalues)
      * Rationale:    Normally to insert N values takes O(N lg N) amortized time.
      *               If the N values are known in advance, are sorted, and
      *               the structure is empty, we can batch insert them much faster.
      */
     __attribute__((nonnull))
-    void create_from_sorted_array(const dmtdata_t *const values, const uint32_t numvalues);
-
-    /**
-     * Effect: Create an DMT containing values.  The number of values is in numvalues.
-     *         On success the DMT takes ownership of *values array, and sets values=NULL.
-     * Requires: this has not been created yet
-     * Requires: values != NULL
-     * Requires: *values is sorted
-     * Requires: *values was allocated with toku_malloc
-     * Requires: Capacity of the *values array is <= new_capacity
-     * Requires: On success, *values may not be accessed again by the caller.
-     * Performance:  time=O(1)
-     * Rational:     create_from_sorted_array takes O(numvalues) time.
-     *               By taking ownership of the array, we save a malloc and memcpy,
-     *               and possibly a free (if the caller is done with the array).
-     */
-    __attribute__((nonnull))
-    void create_steal_sorted_array(dmtdata_t **const values, const uint32_t numvalues, const uint32_t new_capacity);
+    void create_from_sorted_aligned_memory_of_fixed_size_elements(
+            const void *mem,
+            const uint32_t numvalues,
+            const uint32_t mem_length,
+            const uint32_t fixed_value_length,
+            const uint8_t mem_alignment);
 
     /**
      * Effect: Create a new DMT, storing it in *newdmt.
@@ -347,6 +331,7 @@ public:
      */
     uint32_t size(void) const;
 
+    const struct mempool * get_memory_for_serialization(void);
 
     /**
      * Effect:  Insert value into the DMT.
@@ -563,6 +548,13 @@ public:
      */
     size_t memory_size(void);
 
+    bool is_value_length_fixed(void) const;
+
+    uint32_t get_fixed_length_alignment_overhead(void) const;
+
+    uint32_t get_fixed_length(void) const;
+
+    const struct mempool * get_memory_for_serialization(void) const;
 private:
     static_assert(sizeof(dmt_dnode) - sizeof(dmtdata_t) == __builtin_offsetof(dmt_dnode, value), "value is not last field in node");
     static_assert(4 * sizeof(uint32_t) == __builtin_offsetof(dmt_dnode, value), "dmt_node is padded");

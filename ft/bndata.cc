@@ -91,6 +91,7 @@ PATENT RIGHTS GRANT:
 
 #include <bndata.h>
 #include <ft-ops.h>
+#include <wbuf.h>
 
 using namespace toku;
 uint32_t bn_data::klpair_disksize(const uint32_t klpair_len, const klpair_struct *klpair) const {
@@ -111,23 +112,133 @@ void bn_data::add_key(uint32_t keylen) {
     m_disksize_of_keys += sizeof(keylen) + keylen;
 }
 
+void bn_data::add_keys(uint32_t n_keys, uint32_t combined_keylen) {
+    m_disksize_of_keys += n_keys * sizeof(uint32_t) + combined_keylen;
+}
+
 void bn_data::remove_key(uint32_t keylen) {
     m_disksize_of_keys -= sizeof(keylen) + keylen;
 }
 
-void bn_data::initialize_from_data(uint32_t num_entries, unsigned char *buf, uint32_t data_size) {
+void bn_data::initialize_from_separate_keys_and_vals(uint32_t num_entries, struct rbuf *rb, uint32_t data_size, uint32_t version,
+                                                     uint32_t key_data_size, uint32_t val_data_size, bool all_keys_same_length,
+                                                     uint8_t alignment, uint32_t fixed_key_length) {
+    paranoid_invariant(version >= FT_LAYOUT_VERSION_25);  // Support was added @25
+    uint32_t ndone_before = rb->ndone;
+    init_zero();
+    invariant(all_keys_same_length);  // Until otherwise supported.
+    bytevec keys_src;
+    rbuf_literal_bytes(rb, &keys_src, key_data_size);
+    //Generate dmt
+    this->m_buffer.create_from_sorted_aligned_memory_of_fixed_size_elements(
+            keys_src, num_entries, key_data_size, fixed_key_length, alignment);
+    toku_mempool_construct(&this->m_buffer_mempool, val_data_size);
+
+    bytevec vals_src;
+    rbuf_literal_bytes(rb, &vals_src, val_data_size);
+
+    void *vals_dest = toku_mempool_malloc(&this->m_buffer_mempool, val_data_size, 1);
+    paranoid_invariant_notnull(vals_dest);
+    memcpy(vals_dest, vals_src, val_data_size);
+
+    add_keys(num_entries, num_entries * fixed_key_length);
+
+    toku_note_deserialized_basement_node(all_keys_same_length);
+
+    invariant(rb->ndone - ndone_before == data_size);
+}
+// static inline void rbuf_literal_bytes (struct rbuf *r, bytevec *bytes, unsigned int n_bytes) {
+
+void bn_data::prepare_to_serialize(void) {
+    if (m_buffer.is_value_length_fixed()) {
+        omt_compress_kvspace(0, nullptr);  // Gets it ready for easy serialization.
+    }
+}
+
+void bn_data::serialize_header(struct wbuf *wb) const {
+    bool fixed = m_buffer.is_value_length_fixed();
+    if (fixed) {
+        //key_data_size
+        wbuf_nocrc_uint(wb, m_disksize_of_keys + m_buffer.get_fixed_length_alignment_overhead() * omt_size());
+    } else {
+        //key_data_size
+        wbuf_nocrc_uint(wb, m_disksize_of_keys);
+    }
+    //val_data_size
+    wbuf_nocrc_uint(wb, toku_mempool_get_used_space(&m_buffer_mempool));
+    //fixed_key_length
+    wbuf_nocrc_uint(wb, m_buffer.get_fixed_length());
+    // all_keys_same_length
+    wbuf_nocrc_uint8_t(wb, fixed);
+    // keys_vals_separate
+    wbuf_nocrc_uint8_t(wb, fixed);
+    // alignment
+    wbuf_nocrc_uint8_t(wb, m_buffer.ALIGNMENT);
+}
+
+void bn_data::serialize_rest(struct wbuf *wb) const {
+    //Write keys
+    const struct mempool *mp = m_buffer.get_memory_for_serialization();
+    uint32_t key_data_size = toku_mempool_get_used_space(mp);
+    paranoid_invariant(key_data_size == m_disksize_of_keys  + m_buffer.get_fixed_length_alignment_overhead() * omt_size());
+    paranoid_invariant(toku_mempool_get_frag_size(mp) == 0);
+    wbuf_nocrc_literal_bytes(wb, toku_mempool_get_base(mp), key_data_size);
+
+    //Write leafentries
+    paranoid_invariant(toku_mempool_get_frag_size(&m_buffer_mempool) == 0);
+    uint32_t val_data_size = toku_mempool_get_used_space(&m_buffer_mempool);
+    wbuf_nocrc_literal_bytes(wb, toku_mempool_get_base(&m_buffer_mempool), val_data_size);
+}
+
+bool bn_data::need_to_serialize_each_leafentry_with_key(void) const {
+    return !m_buffer.is_value_length_fixed();
+}
+
+void bn_data::initialize_from_data(uint32_t num_entries, struct rbuf *rb, uint32_t data_size, uint32_t version) {
+    uint32_t key_data_size = data_size;  // overallocate if < version 25
+    uint32_t val_data_size = data_size;  // overallocate if < version 25
+
+    bool all_keys_same_length = false;
+    bool keys_vals_separate = false;
+    uint8_t alignment = 0;
+    uint32_t fixed_key_length = 0;
+
+    if (version >= FT_LAYOUT_VERSION_25) {
+
+        uint32_t ndone_before = rb->ndone;
+        key_data_size = rbuf_int(rb);
+        val_data_size = rbuf_int(rb);
+        fixed_key_length = rbuf_int(rb);  // 0 if !all_keys_same_length
+        all_keys_same_length = rbuf_char(rb);
+        keys_vals_separate = rbuf_char(rb);
+        invariant(all_keys_same_length == keys_vals_separate);  // Until we support this
+        alignment = rbuf_char(rb); // 0 if !keys_vals_separate
+        uint32_t header_size = rb->ndone - ndone_before;
+        //TODO: invariant about header size (as well as use for disk size calcs), and make it a constant somewhere
+        data_size -= header_size;
+        invariant(header_size == HEADER_LENGTH);
+        if (keys_vals_separate) {
+            initialize_from_separate_keys_and_vals(num_entries, rb, data_size, version,
+                                                   key_data_size, val_data_size, all_keys_same_length,
+                                                   alignment, fixed_key_length);
+            return;
+        }
+    }
+    bytevec bytes;
+    rbuf_literal_bytes(rb, &bytes, data_size);
+    const unsigned char *CAST_FROM_VOIDP(buf, bytes);
     if (data_size == 0) {
         invariant_zero(num_entries);
     }
     init_zero();
     klpair_dmt_t::builder dmt_builder;
-    dmt_builder.create(num_entries, data_size);
+    dmt_builder.create(num_entries, key_data_size);
 
     unsigned char *newmem = NULL;
     // add same wiggle room that toku_mempool_construct would, 25% extra
-    uint32_t allocated_bytes = data_size + data_size/4;
-    CAST_FROM_VOIDP(newmem, toku_xmalloc(allocated_bytes));
-    unsigned char* curr_src_pos = buf;
+    uint32_t allocated_bytes_vals = val_data_size + val_data_size/4;
+    CAST_FROM_VOIDP(newmem, toku_xmalloc(allocated_bytes_vals));
+    const unsigned char* curr_src_pos = buf;
     unsigned char* curr_dest_pos = newmem;
     for (uint32_t i = 0; i < num_entries; i++) {
         uint8_t curr_type = curr_src_pos[0];
@@ -136,7 +247,7 @@ void bn_data::initialize_from_data(uint32_t num_entries, unsigned char *buf, uin
         // to do so, we must extract it from the leafentry
         // and write it in
         uint32_t keylen = 0;
-        void* keyp = NULL;
+        const void* keyp = NULL;
         keylen = *(uint32_t *)curr_src_pos;
         curr_src_pos += sizeof(uint32_t);
         uint32_t clean_vallen = 0;
@@ -178,36 +289,42 @@ void bn_data::initialize_from_data(uint32_t num_entries, unsigned char *buf, uin
             *(uint8_t *)curr_dest_pos = num_pxrs;
             curr_dest_pos += sizeof(num_pxrs);
             // now we need to pack the rest of the data
-            uint32_t num_rest_bytes = leafentry_rest_memsize(num_pxrs, num_cxrs, curr_src_pos);
+            uint32_t num_rest_bytes = leafentry_rest_memsize(num_pxrs, num_cxrs, const_cast<uint8_t*>(curr_src_pos));
             memcpy(curr_dest_pos, curr_src_pos, num_rest_bytes);
             curr_dest_pos += num_rest_bytes;
             curr_src_pos += num_rest_bytes;
         }
     }
-    toku_note_deserialized_basement_node(dmt_builder.is_value_length_fixed());
     dmt_builder.build_and_destroy(&this->m_buffer);
-    uint32_t num_bytes_read UU() = (uint32_t)(curr_src_pos - buf);
+    toku_note_deserialized_basement_node(m_buffer.is_value_length_fixed());
+    uint32_t num_bytes_read = (uint32_t)(curr_src_pos - buf);
     paranoid_invariant( num_bytes_read == data_size);
+
 #if TOKU_DEBUG_PARANOID
     uint32_t num_bytes_written = curr_dest_pos - newmem + m_disksize_of_keys;
     paranoid_invariant( num_bytes_written == data_size);
 #endif
-    toku_mempool_init(&m_buffer_mempool, newmem, (size_t)(curr_dest_pos - newmem), allocated_bytes);
+    toku_mempool_init(&m_buffer_mempool, newmem, (size_t)(curr_dest_pos - newmem), allocated_bytes_vals);
 
-    paranoid_invariant(get_disk_size() == data_size);  //TODO: This may not stay correct after a disk format change.
+    
 
-    //Maybe shrink mempool
-    size_t max_allowed = toku_mempool_get_used_space(&m_buffer_mempool);
-    max_allowed += max_allowed / 4;
-    size_t allocated = toku_mempool_get_size(&m_buffer_mempool);
-    size_t footprint = toku_mempool_footprint(&m_buffer_mempool);
-    if (allocated > max_allowed && footprint > max_allowed) {
-        // Reallocate smaller mempool to save memory
-        invariant_zero(toku_mempool_get_frag_size(&m_buffer_mempool));
-        struct mempool new_mp;
-        toku_mempool_copy_construct(&new_mp, toku_mempool_get_base(&m_buffer_mempool), toku_mempool_get_used_space(&m_buffer_mempool));
-        toku_mempool_destroy(&m_buffer_mempool);
-        m_buffer_mempool = new_mp;
+    if (version < FT_LAYOUT_VERSION_25) {
+        paranoid_invariant(m_disksize_of_keys + toku_mempool_get_used_space(&m_buffer_mempool) == data_size);
+        //Maybe shrink mempool.  Unnecessary after version 25
+        size_t max_allowed = toku_mempool_get_used_space(&m_buffer_mempool);
+        max_allowed += max_allowed / 4;
+        size_t allocated = toku_mempool_get_size(&m_buffer_mempool);
+        size_t footprint = toku_mempool_footprint(&m_buffer_mempool);
+        if (allocated > max_allowed && footprint > max_allowed) {
+            // Reallocate smaller mempool to save memory
+            invariant_zero(toku_mempool_get_frag_size(&m_buffer_mempool));
+            struct mempool new_mp;
+            toku_mempool_copy_construct(&new_mp, toku_mempool_get_base(&m_buffer_mempool), toku_mempool_get_used_space(&m_buffer_mempool));
+            toku_mempool_destroy(&m_buffer_mempool);
+            m_buffer_mempool = new_mp;
+        }
+    } else {
+        paranoid_invariant(get_disk_size() == data_size + HEADER_LENGTH);
     }
 }
 
@@ -221,7 +338,7 @@ uint64_t bn_data::get_memory_size() {
     // This one includes not-yet-allocated for nodes (just like old constant-key omt)
     //TODO: Maybe ask for mempool_footprint instead of memory_size.
     retval += m_buffer.memory_size();
-    invariant(retval >= get_disk_size());
+    invariant(retval + HEADER_LENGTH >= get_disk_size());
     return retval;
 }
 
@@ -399,7 +516,10 @@ void bn_data::move_leafentries_to(
 }
 
 uint64_t bn_data::get_disk_size() {
-    return toku_mempool_get_used_space(&m_buffer_mempool) + m_disksize_of_keys;
+    return HEADER_LENGTH +
+           m_disksize_of_keys +
+           m_buffer.get_fixed_length_alignment_overhead() * omt_size() +
+           toku_mempool_get_used_space(&m_buffer_mempool);
 }
 
 void bn_data::verify_mempool(void) {
