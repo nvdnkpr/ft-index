@@ -376,6 +376,7 @@ serialize_ftnode_partition(FTNODE node, int i, struct sub_block *sb) {
         wbuf_nocrc_char(&wb, ch);
         wbuf_nocrc_uint(&wb, bd->omt_size());
 
+        bd->prepare_to_serialize();
         bd->serialize_header(&wb);
         if (bd->need_to_serialize_each_leafentry_with_key()) {
             //
