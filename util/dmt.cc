@@ -104,13 +104,11 @@ void dmt<dmtdata_t, dmtdataout_t>::create(void) {
 }
 
 template<typename dmtdata_t, typename dmtdataout_t>
-void dmt<dmtdata_t, dmtdataout_t>::create_from_sorted_aligned_memory_of_fixed_size_elements(
+void dmt<dmtdata_t, dmtdataout_t>::create_from_sorted_memory_of_fixed_size_elements(
         const void *mem,
         const uint32_t numvalues,
         const uint32_t mem_length,
-        const uint32_t fixed_value_length,
-        const uint8_t mem_alignment) {
-    invariant(ALIGNMENT == mem_alignment);  //Alternative not yet supported.
+        const uint32_t fixed_value_length) {
     invariant(align(mem_length) == mem_length);
     this->create_internal_no_alloc(false);
     this->values_same_size = true;
@@ -118,10 +116,24 @@ void dmt<dmtdata_t, dmtdataout_t>::create_from_sorted_aligned_memory_of_fixed_si
     this->is_array = true;
     this->d.a.start_idx = 0;
     this->d.a.num_values = numvalues;
-    toku_mempool_construct(&this->mp, mem_length);
-    void *dest = toku_mempool_malloc(&this->mp, align(mem_length), 1);
-    paranoid_invariant_notnull(dest);
-    memcpy(dest, mem, mem_length);
+    const uint8_t pad_bytes = get_fixed_length_alignment_overhead();
+    uint32_t aligned_memsize = mem_length + numvalues * pad_bytes;
+    toku_mempool_construct(&this->mp, aligned_memsize);
+    void *ptr = toku_mempool_malloc(&this->mp, aligned_memsize, 1);
+    paranoid_invariant_notnull(ptr);
+    uint8_t *CAST_FROM_VOIDP(dest, ptr);
+    const uint8_t *CAST_FROM_VOIDP(src, mem);
+    if (pad_bytes == 0) {
+        paranoid_invariant(aligned_memsize == mem_length);
+        memcpy(dest, src, aligned_memsize);
+    } else {
+        const uint32_t fixed_len = this->value_length;
+        const uint32_t fixed_aligned_len = align(this->value_length);
+        paranoid_invariant(this->d.a.num_values*fixed_len == mem_length);
+        for (uint32_t i = 0; i < this->d.a.num_values; i++) {
+            memcpy(&dest[i*fixed_aligned_len], &src[i*fixed_len], fixed_len);
+        }
+    }
 }
 
 template<typename dmtdata_t, typename dmtdataout_t>
@@ -1117,24 +1129,28 @@ bool dmt<dmtdata_t, dmtdataout_t>::is_value_length_fixed(void) const {
 }
 
 template<typename dmtdata_t, typename dmtdataout_t>
-const struct mempool * dmt<dmtdata_t, dmtdataout_t>::get_memory_for_serialization(void) const {
-    return &this->mp;
-}
-
-template<typename dmtdata_t, typename dmtdataout_t>
-void dmt<dmtdata_t, dmtdataout_t>::zero_all_alignment_bytes(void) {
-    invariant(this->values_same_size);
-    invariant(toku_mempool_get_frag_size(&this->mp) == 0);
+const struct mempool * dmt<dmtdata_t, dmtdataout_t>::serialize_values(uint32_t expected_unpadded_memory, struct wbuf *wb) const {
+    invariant(this->is_array);
     const uint8_t pad_bytes = get_fixed_length_alignment_overhead();
-    if (pad_bytes > 0) {
-        char * CAST_FROM_VOIDP(ptr, toku_mempool_get_base(&this->mp));
+    paranoid_invariant(toku_mempool_get_used_space(&this->mp) ==
+                       expected_unpadded_memory + pad_bytes * this->d.a.num_values);
+    paranoid_invariant(expected_unpadded_memory == this->d.a.num_values * this->value_length);
+    paranoid_invariant(toku_mempool_get_frag_size(&this->mp) == 0);
+    if (pad_bytes == 0) {
+        // Basically a memcpy
+        wbuf_nocrc_literal_bytes(wb, toku_mempool_get_base(&this->mp), expected_unpadded_memory);
+    } else {
+        uint8_t* dest = wbuf_nocrc_reserve_literal_bytes(wb, expected_unpadded_memory);
+        uint8_t* CAST_FROM_VOIDP(src, toku_mempool_get_base(&this->mp));
+        const uint32_t fixed_len = this->value_length;
+        const uint32_t fixed_aligned_len = align(this->value_length);
+        paranoid_invariant(this->d.a.num_values*fixed_len == expected_unpadded_memory);
         for (uint32_t i = 0; i < this->d.a.num_values; i++) {
-            ptr += this->value_length;
-            memset(ptr, 0, pad_bytes);
-            ptr += pad_bytes;
+            memcpy(&dest[i*fixed_len], &src[i*fixed_aligned_len], fixed_len);
         }
-        invariant(toku_mempool_get_next_free_ptr(&this->mp) == ptr);
     }
+
+    return &this->mp;
 }
 
 template<typename dmtdata_t, typename dmtdataout_t>

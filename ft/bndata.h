@@ -291,7 +291,6 @@ private:
         + sizeof(uint32_t) // fixed_key_length
         + sizeof(uint8_t) // all_keys_same_length
         + sizeof(uint8_t) // keys_vals_separate
-        + sizeof(uint8_t) // alignment
         + 0;
 
     // Private functions
@@ -309,6 +308,6 @@ private:
 
     void initialize_from_separate_keys_and_vals(uint32_t num_entries, struct rbuf *rb, uint32_t data_size, uint32_t version,
                                                 uint32_t key_data_size, uint32_t val_data_size, bool all_keys_same_length,
-                                                uint8_t alignment, uint32_t fixed_key_length);
+                                                uint32_t fixed_key_length);
 };
 

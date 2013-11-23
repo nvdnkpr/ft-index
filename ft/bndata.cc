@@ -122,7 +122,7 @@ void bn_data::remove_key(uint32_t keylen) {
 
 void bn_data::initialize_from_separate_keys_and_vals(uint32_t num_entries, struct rbuf *rb, uint32_t data_size, uint32_t version UU(),
                                                      uint32_t key_data_size, uint32_t val_data_size, bool all_keys_same_length,
-                                                     uint8_t alignment, uint32_t fixed_key_length) {
+                                                     uint32_t fixed_key_length) {
     paranoid_invariant(version >= FT_LAYOUT_VERSION_25);  // Support was added @25
     uint32_t ndone_before = rb->ndone;
     init_zero();
@@ -130,8 +130,8 @@ void bn_data::initialize_from_separate_keys_and_vals(uint32_t num_entries, struc
     bytevec keys_src;
     rbuf_literal_bytes(rb, &keys_src, key_data_size);
     //Generate dmt
-    this->m_buffer.create_from_sorted_aligned_memory_of_fixed_size_elements(
-            keys_src, num_entries, key_data_size, fixed_key_length, alignment);
+    this->m_buffer.create_from_sorted_memory_of_fixed_size_elements(
+            keys_src, num_entries, key_data_size, fixed_key_length);
     toku_mempool_construct(&this->m_buffer_mempool, val_data_size);
 
     bytevec vals_src;
@@ -152,19 +152,14 @@ void bn_data::initialize_from_separate_keys_and_vals(uint32_t num_entries, struc
 void bn_data::prepare_to_serialize(void) {
     if (m_buffer.is_value_length_fixed()) {
         omt_compress_kvspace(0, nullptr);  // Gets it ready for easy serialization.
-        m_buffer.zero_all_alignment_bytes();
     }
 }
 
 void bn_data::serialize_header(struct wbuf *wb) const {
     bool fixed = m_buffer.is_value_length_fixed();
-    if (fixed) {
-        //key_data_size
-        wbuf_nocrc_uint(wb, m_disksize_of_keys + m_buffer.get_fixed_length_alignment_overhead() * omt_size());
-    } else {
-        //key_data_size
-        wbuf_nocrc_uint(wb, m_disksize_of_keys);
-    }
+
+    //key_data_size
+    wbuf_nocrc_uint(wb, m_disksize_of_keys);
     //val_data_size
     wbuf_nocrc_uint(wb, toku_mempool_get_used_space(&m_buffer_mempool));
     //fixed_key_length
@@ -173,17 +168,12 @@ void bn_data::serialize_header(struct wbuf *wb) const {
     wbuf_nocrc_uint8_t(wb, fixed);
     // keys_vals_separate
     wbuf_nocrc_uint8_t(wb, fixed);
-    // alignment
-    wbuf_nocrc_uint8_t(wb, m_buffer.ALIGNMENT);
 }
 
 void bn_data::serialize_rest(struct wbuf *wb) const {
     //Write keys
-    const struct mempool *mp = m_buffer.get_memory_for_serialization();
-    uint32_t key_data_size = toku_mempool_get_used_space(mp);
-    paranoid_invariant(key_data_size == m_disksize_of_keys  + m_buffer.get_fixed_length_alignment_overhead() * omt_size());
-    paranoid_invariant(toku_mempool_get_frag_size(mp) == 0);
-    wbuf_nocrc_literal_bytes(wb, toku_mempool_get_base(mp), key_data_size);
+    invariant(m_buffer.is_value_length_fixed()); //Assumes prepare_to_serialize was called
+    m_buffer.serialize_values(m_disksize_of_keys, wb);
 
     //Write leafentries
     paranoid_invariant(toku_mempool_get_frag_size(&m_buffer_mempool) == 0);
@@ -201,7 +191,6 @@ void bn_data::initialize_from_data(uint32_t num_entries, struct rbuf *rb, uint32
 
     bool all_keys_same_length = false;
     bool keys_vals_separate = false;
-    uint8_t alignment = 0;
     uint32_t fixed_key_length = 0;
 
     if (version >= FT_LAYOUT_VERSION_25) {
@@ -213,15 +202,13 @@ void bn_data::initialize_from_data(uint32_t num_entries, struct rbuf *rb, uint32
         all_keys_same_length = rbuf_char(rb);
         keys_vals_separate = rbuf_char(rb);
         invariant(all_keys_same_length == keys_vals_separate);  // Until we support this
-        alignment = rbuf_char(rb); // 0 if !keys_vals_separate
         uint32_t header_size = rb->ndone - ndone_before;
-        //TODO: invariant about header size (as well as use for disk size calcs), and make it a constant somewhere
         data_size -= header_size;
         invariant(header_size == HEADER_LENGTH);
         if (keys_vals_separate) {
             initialize_from_separate_keys_and_vals(num_entries, rb, data_size, version,
                                                    key_data_size, val_data_size, all_keys_same_length,
-                                                   alignment, fixed_key_length);
+                                                   fixed_key_length);
             return;
         }
     }
@@ -520,7 +507,6 @@ void bn_data::move_leafentries_to(
 uint64_t bn_data::get_disk_size() {
     return HEADER_LENGTH +
            m_disksize_of_keys +
-           m_buffer.get_fixed_length_alignment_overhead() * omt_size() +
            toku_mempool_get_used_space(&m_buffer_mempool);
 }
 

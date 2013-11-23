@@ -96,6 +96,7 @@ PATENT RIGHTS GRANT:
 #include <toku_portability.h>
 #include <toku_race_tools.h>
 #include "growable_array.h"
+#include <wbuf.h>
 
 namespace toku {
 typedef uint32_t node_idx;
@@ -269,12 +270,11 @@ public:
      *               the structure is empty, we can batch insert them much faster.
      */
     __attribute__((nonnull))
-    void create_from_sorted_aligned_memory_of_fixed_size_elements(
+    void create_from_sorted_memory_of_fixed_size_elements(
             const void *mem,
             const uint32_t numvalues,
             const uint32_t mem_length,
-            const uint32_t fixed_value_length,
-            const uint8_t mem_alignment);
+            const uint32_t fixed_value_length);
 
     /**
      * Effect: Create a new DMT, storing it in *newdmt.
@@ -331,7 +331,7 @@ public:
      */
     uint32_t size(void) const;
 
-    const struct mempool * get_memory_for_serialization(void);
+    const struct mempool * serialize_values(uint32_t expected_unpadded_memory, struct wbuf *wb) const;
 
     /**
      * Effect:  Insert value into the DMT.
@@ -550,13 +550,9 @@ public:
 
     bool is_value_length_fixed(void) const;
 
-    uint32_t get_fixed_length_alignment_overhead(void) const;
 
     uint32_t get_fixed_length(void) const;
 
-    const struct mempool * get_memory_for_serialization(void) const;
-
-    void zero_all_alignment_bytes(void);
 private:
     static_assert(sizeof(dmt_dnode) - sizeof(dmtdata_t) == __builtin_offsetof(dmt_dnode, value), "value is not last field in node");
     static_assert(4 * sizeof(uint32_t) == __builtin_offsetof(dmt_dnode, value), "dmt_node is padded");
@@ -580,6 +576,8 @@ private:
         struct dmt_array a;
         struct dmt_tree t;
     } d;
+
+    uint32_t get_fixed_length_alignment_overhead(void) const;
 
     void verify_internal(const subtree &subtree) const;
 
