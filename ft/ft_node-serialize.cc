@@ -320,7 +320,7 @@ serialize_ftnode_partition_size (FTNODE node, int i)
     }
     else {
         result += 4; // n_entries in buffer table
-        result += BLB_NBYTESINDATA(node, i);
+        result += bn_data::HEADER_LENGTH + BLB_NBYTESINDATA(node, i);
     }
     result += 4; // checksum
     return result;

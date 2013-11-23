@@ -112,7 +112,8 @@ void bn_data::add_key(uint32_t keylen) {
 }
 
 void bn_data::add_keys(uint32_t n_keys, uint32_t combined_keylen) {
-    m_disksize_of_keys += n_keys * sizeof(uint32_t) + combined_keylen;
+    invariant(n_keys * sizeof(uint32_t) <= combined_keylen);
+    m_disksize_of_keys += combined_keylen;
 }
 
 void bn_data::remove_key(uint32_t keylen) {
@@ -178,7 +179,7 @@ void bn_data::serialize_rest(struct wbuf *wb) const {
     m_buffer.serialize_values(m_disksize_of_keys, wb);
 
     //Write leafentries
-    paranoid_invariant(toku_mempool_get_frag_size(&m_buffer_mempool) == 0);
+    paranoid_invariant(toku_mempool_get_frag_size(&m_buffer_mempool) == 0); //Just ran omt_compress_kvspace
     uint32_t val_data_size = toku_mempool_get_used_space(&m_buffer_mempool);
     wbuf_nocrc_literal_bytes(wb, toku_mempool_get_base(&m_buffer_mempool), val_data_size);
 }
@@ -196,7 +197,6 @@ void bn_data::initialize_from_data(uint32_t num_entries, struct rbuf *rb, uint32
     uint32_t fixed_key_length = 0;
 
     if (version >= FT_LAYOUT_VERSION_25) {
-
         uint32_t ndone_before = rb->ndone;
         key_data_size = rbuf_int(rb);
         val_data_size = rbuf_int(rb);
@@ -297,10 +297,8 @@ void bn_data::initialize_from_data(uint32_t num_entries, struct rbuf *rb, uint32
 #endif
     toku_mempool_init(&m_buffer_mempool, newmem, (size_t)(curr_dest_pos - newmem), allocated_bytes_vals);
 
-    
-
+    paranoid_invariant(get_disk_size() == data_size);
     if (version < FT_LAYOUT_VERSION_25) {
-        paranoid_invariant(m_disksize_of_keys + toku_mempool_get_used_space(&m_buffer_mempool) == data_size);
         //Maybe shrink mempool.  Unnecessary after version 25
         size_t max_allowed = toku_mempool_get_used_space(&m_buffer_mempool);
         max_allowed += max_allowed / 4;
@@ -314,8 +312,6 @@ void bn_data::initialize_from_data(uint32_t num_entries, struct rbuf *rb, uint32
             toku_mempool_destroy(&m_buffer_mempool);
             m_buffer_mempool = new_mp;
         }
-    } else {
-        paranoid_invariant(get_disk_size() == data_size + HEADER_LENGTH);
     }
 }
 
@@ -329,7 +325,7 @@ uint64_t bn_data::get_memory_size() {
     // This one includes not-yet-allocated for nodes (just like old constant-key omt)
     //TODO: Maybe ask for mempool_footprint instead of memory_size.
     retval += m_buffer.memory_size();
-    invariant(retval + HEADER_LENGTH >= get_disk_size());
+    invariant(retval >= get_disk_size());
     return retval;
 }
 
@@ -507,8 +503,7 @@ void bn_data::move_leafentries_to(
 }
 
 uint64_t bn_data::get_disk_size() {
-    return HEADER_LENGTH +
-           m_disksize_of_keys +
+    return m_disksize_of_keys +
            toku_mempool_get_used_space(&m_buffer_mempool);
 }
 

@@ -109,7 +109,6 @@ void dmt<dmtdata_t, dmtdataout_t>::create_from_sorted_memory_of_fixed_size_eleme
         const uint32_t numvalues,
         const uint32_t mem_length,
         const uint32_t fixed_value_length) {
-    this->create_internal_no_alloc(false);
     this->values_same_size = true;
     this->value_length = fixed_value_length;
     this->is_array = true;

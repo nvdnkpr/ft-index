@@ -669,6 +669,7 @@ ftleaf_disk_size(FTNODE node)
     for (int i = 0; i < node->n_children; i++) {
         retval += BLB_DATA(node, i)->get_disk_size();
     }
+    retval += bn_data::HEADER_LENGTH * node->n_children;
     return retval;
 }
 
@@ -1181,7 +1182,7 @@ merge_leaf_nodes(FTNODE a, FTNODE b)
         {
             // verify that last basement in a is empty, then destroy mempool
             size_t used_space = a_last_bd->get_disk_size();
-            invariant(used_space == bn_data::HEADER_LENGTH);
+            invariant_zero(used_space);
         }
         destroy_basement_node(bn);
         set_BNULL(a, a->n_children-1);
