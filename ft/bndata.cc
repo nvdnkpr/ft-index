@@ -120,7 +120,7 @@ void bn_data::remove_key(uint32_t keylen) {
     m_disksize_of_keys -= sizeof(keylen) + keylen;
 }
 
-void bn_data::initialize_from_separate_keys_and_vals(uint32_t num_entries, struct rbuf *rb, uint32_t data_size, uint32_t version,
+void bn_data::initialize_from_separate_keys_and_vals(uint32_t num_entries, struct rbuf *rb, uint32_t data_size, uint32_t version UU(),
                                                      uint32_t key_data_size, uint32_t val_data_size, bool all_keys_same_length,
                                                      uint8_t alignment, uint32_t fixed_key_length) {
     paranoid_invariant(version >= FT_LAYOUT_VERSION_25);  // Support was added @25
@@ -297,10 +297,11 @@ void bn_data::initialize_from_data(uint32_t num_entries, struct rbuf *rb, uint32
     }
     dmt_builder.build_and_destroy(&this->m_buffer);
     toku_note_deserialized_basement_node(m_buffer.is_value_length_fixed());
+
+#if TOKU_DEBUG_PARANOID
     uint32_t num_bytes_read = (uint32_t)(curr_src_pos - buf);
     paranoid_invariant( num_bytes_read == data_size);
 
-#if TOKU_DEBUG_PARANOID
     uint32_t num_bytes_written = curr_dest_pos - newmem + m_disksize_of_keys;
     paranoid_invariant( num_bytes_written == data_size);
 #endif
