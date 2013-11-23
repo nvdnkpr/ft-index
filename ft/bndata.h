@@ -285,7 +285,7 @@ public:
     void serialize_header(struct wbuf *wb) const;
     void serialize_rest(struct wbuf *wb) const;
     bool need_to_serialize_each_leafentry_with_key(void) const;
-private:
+
     static const uint32_t HEADER_LENGTH = 0
         + sizeof(uint32_t) // key_data_size
         + sizeof(uint32_t) // val_data_size
@@ -293,6 +293,7 @@ private:
         + sizeof(uint8_t) // all_keys_same_length
         + sizeof(uint8_t) // keys_vals_separate
         + 0;
+private:
 
     // Private functions
     LEAFENTRY mempool_malloc_and_update_omt(size_t size, void **maybe_free);
