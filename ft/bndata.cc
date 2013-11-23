@@ -91,7 +91,6 @@ PATENT RIGHTS GRANT:
 
 #include <bndata.h>
 #include <ft-ops.h>
-#include <wbuf.h>
 
 using namespace toku;
 uint32_t bn_data::klpair_disksize(const uint32_t klpair_len, const klpair_struct *klpair) const {

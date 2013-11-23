@@ -92,6 +92,7 @@ PATENT RIGHTS GRANT:
 #pragma once
 
 #include <util/mempool.h>
+#include "wbuf.h"
 #include <util/dmt.h>
 #include "leafentry.h"
 

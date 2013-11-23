@@ -96,7 +96,7 @@ PATENT RIGHTS GRANT:
 #include <toku_portability.h>
 #include <toku_race_tools.h>
 #include "growable_array.h"
-#include <wbuf.h>
+#include "../ft/wbuf.h"
 
 namespace toku {
 typedef uint32_t node_idx;
