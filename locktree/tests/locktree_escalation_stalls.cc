@@ -205,7 +205,7 @@ int main(int argc, const char *argv[]) {
     uint64_t stalls = 1;
     int n_small = 7;
     bool check_lock_tree_constraints = true;
-    uint64_t max_lock_memory = 1000000;
+    uint64_t max_lock_memory = 100000000;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {

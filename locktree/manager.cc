@@ -427,12 +427,14 @@ int locktree::manager::check_current_lock_constraints(TXNID txn_id, void *txn_ex
     // mutex and check again. if we're still out of locks, run escalation.
     // return an error if we're still out of locks after escalation.
     if (r == 0 && out_of_locks()) {
+        uint64_t current_lock_memory = m_current_lock_memory;
 #if TOKU_LOCKTREE_ESCALATOR_LAMBDA
         m_escalator.run(this, [this] () -> void { run_escalation(); });
 #else
         m_escalator.run(this, manager_run_escalation_fun, this);
 #endif
         if (out_of_locks()) {
+            current_lock_memory = current_lock_memory;
             r = TOKUDB_OUT_OF_LOCKS;
         }
     }
@@ -440,10 +442,12 @@ int locktree::manager::check_current_lock_constraints(TXNID txn_id, void *txn_ex
 }
 
 void locktree::manager::note_mem_used(uint64_t mem_used) {
+    // fprintf(stderr, "%s %" PRIu64 "\n", __FUNCTION__, mem_used);
     (void) toku_sync_fetch_and_add(&m_current_lock_memory, mem_used);
 }
 
 void locktree::manager::note_mem_released(uint64_t mem_released) {
+    // fprintf(stderr, "%s %" PRIu64 "\n", __FUNCTION__, mem_released);
     uint64_t old_mem_used = toku_sync_fetch_and_sub(&m_current_lock_memory, mem_released);
     invariant(old_mem_used >= mem_released);
 }
@@ -505,7 +509,12 @@ void locktree::manager::escalate_locktrees(locktree **locktrees, int num_locktre
     // locktree individually, in-place.
     tokutime_t t0 = toku_time_now();
     for (int i = 0; i < num_locktrees; i++) {
+        uint64_t orig_mem_used = locktrees[i]->get_mem_used();
         locktrees[i]->escalate(m_lt_escalate_callback, m_lt_escalate_callback_extra);
+        uint64_t mem_used = locktrees[i]->get_mem_used();
+        if (mem_used > orig_mem_used) {
+            fprintf(stderr, "%s:%u %" PRIu64 " %" PRIu64 "\n", __FILE__, __LINE__, mem_used, orig_mem_used);
+        }
         if (2 * m_current_lock_memory < m_max_lock_memory) { // current < 1/2 max
             break;
         }
